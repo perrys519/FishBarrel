@@ -1,0 +1,584 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <title>FishBarrel Options</title>
+  <link rel="stylesheet" href="style.css" type="text/css" />
+  <script src="authorities.js"></script>
+  <script src="include.js"></script>
+  <script src="settings.js"></script>
+</head>
+<body>
+
+<div class="fb-page">
+
+<header class="fb-header">
+  <img class="fb-logo" src="duck.png" alt="" />
+  <div>
+    <div class="fb-title">FishBarrel Options</div>
+    <div class="fb-tagline">Settings save as you type &middot; everything stays on this computer</div>
+  </div>
+</header>
+
+<form>
+
+<section class="fb-card">
+  <h2>Country</h2>
+  <p class="muted">Determines which regulators FishBarrel shows you when composing a complaint.</p>
+  <div class="fb-radio-list">
+    <label><input type="radio" name="Country" value="Australia" id="Country_Australia" /> Australia</label>
+    <label><input type="radio" name="Country" value="Canada" id="Country_Canada" /> Canada</label>
+    <label><input type="radio" name="Country" value="Denmark" id="Country_Denmark" /> Denmark</label>
+    <label><input type="radio" name="Country" value="Germany" id="Country_Germany" /> Germany</label>
+    <label><input type="radio" name="Country" value="Ireland" id="Country_Ireland" /> Ireland</label>
+    <label><input type="radio" name="Country" value="Netherlands" id="Country_Netherlands" /> Netherlands</label>
+    <label><input type="radio" name="Country" value="New Zealand" id="Country_NZ" /> New Zealand</label>
+    <label><input type="radio" name="Country" value="UK" id="Country_UK" /> UK</label>
+    <label><input type="radio" name="Country" value="USA" id="Country_USA" /> USA</label>
+  </div>
+</section>
+
+<section class="fb-card">
+  <h2>Contact information</h2>
+  <p class="muted">Used to auto-fill the contact fields on complaint forms.</p>
+  <table class="fb-field-table">
+    <tr>
+      <td><label for="title">Title</label></td>
+      <td><select id="title">
+        <option value="01">Mr</option>
+        <option value="02">Mrs</option>
+        <option value="03">Miss</option>
+        <option value="04">Ms</option>
+        <option value="05">Dr</option>
+      </select></td>
+    </tr>
+    <tr><td><label for="firstName">First name</label></td><td><input id="firstName" /></td></tr>
+    <tr><td><label for="surname">Surname</label></td><td><input id="surname" /></td></tr>
+    <tr><td><label for="address">Address</label></td><td><input id="address" /></td></tr>
+    <tr><td><label for="city">City</label></td><td><input id="city" /></td></tr>
+    <tr><td><label for="county">County / state</label></td><td><input id="county" /> <span class="muted" style="margin-left:8px;font-size:12px;">In US, use the 2-letter state abbreviation (e.g. NY, AZ)</span></td></tr>
+    <tr><td><label for="postcode">Postcode / ZIP</label></td><td><input id="postcode" /></td></tr>
+    <tr><td><label for="phonenumber">Phone</label></td><td><input id="phonenumber" /></td></tr>
+    <tr><td><label for="email">Email</label></td><td><input id="email" type="email" /></td></tr>
+  </table>
+</section>
+
+<section class="fb-card">
+  <h2>Complaint templates</h2>
+  <p class="muted">Customise the wording FishBarrel uses when composing a complaint to each regulator. Edit the template on the left; a sample complaint built from it appears on the right.</p>
+  <div class="fb-templates">
+    <ul class="Tabs" id="TabUL"></ul>
+
+<div class="TabContent" id="Tab_VZHH">
+ <fieldset id="Template.Authority.VZHH" title="VZHH Complaint Template">
+  <h2>Verbraucherzentrale Hamburg Beschwerde Vorlage</h2>
+  <br />
+  <a id="ResetTemplate_VZHH">Vorlage zurr&uuml;cksetzen</a>
+  <p>Dieser Text wird verwendet, um eine Beschwerde f&uuml;r Verbraucherzentrale Hamburg zu formatieren.</p>
+  <table><tr><td>
+     <h3><label for="ComplaintTemplate.VZHH.Header">Kopf</label></h3>
+     <textarea id="ComplaintTemplate.VZHH.Header">Sehr geehrte Verbraucherzentrale Hamburg,
+
+ich glaube nicht, dass es ausreichend gute wissenschaftliche Beweise gibt, um die folgend aufgef&uuml;hrten Werbeaussagen, von der Website &lt;domain&gt; entnommen, zu untermauern. Der Werbetreibende &lt;company&gt; verst&ouml;&szlig;t meiner Ansicht dem Heilmittelwerbegesetz.
+</textarea>
+     <br />
+     <h3><label for="ComplaintTemplate.VZHH.Claim">Beschwerdevorlage</label></h3>
+     <textarea id="ComplaintTemplate.VZHH.Claim">
+-----------------------------------------------------
+#&lt;index&gt;. Aussage gefunden unter &lt;url&gt;
+
+&quot;&lt;claim&gt;&quot;
+
+&lt;background&gt;
+     </textarea>
+     <br />
+     <h3><label for="ComplaintTemplate.VZHH.Footer">Fu&szlig;zeile</label></h3>
+     <textarea id="ComplaintTemplate.VZHH.Footer">
+-----------------------------------------------------
+
+Ich bitte Sie, meine Beschwerde zu pr&uuml;fen und mich &uuml;ber den weiten Verlauf dieses Falls zu informieren.
+
+Vielen Dank f&uuml;r Ihre Hilfe!
+
+Mit freundlichen Gr&uuml;&szlig;en,
+
+&lt;name&gt;
+&lt;address&gt;
+&lt;phone&gt;
+     </textarea>
+     <br />
+    </td>
+    <td valign="top">
+     <h3>Preview</h3>
+     <textarea class="preview" style="height:500px;" id="ComplaintTemplate.VZHH.Preview"></textarea>
+    </td>
+   </tr></table>
+ </fieldset>
+</div>
+
+<div class="TabContent" id="Tab_SRC">
+ <fieldset id="Template.Authority.SRC" title="SRC Complaint Template">
+  <h2>Stichting Reclame Code Complaint Template</h2>
+  <br /><a id="ResetTemplate_SRC">Reset template</a>
+  <table><tr><td>
+     <h3><label for="ComplaintTemplate.SRC.Header">Header</label></h3>
+     <textarea id="ComplaintTemplate.SRC.Header">Ik geloof niet dat, &lt;company&gt; deze claim kan ondersteunen met enig bewijs.</textarea>
+     <br />
+     <h3><label for="ComplaintTemplate.SRC.Claim">Claim Template</label></h3>
+     <textarea id="ComplaintTemplate.SRC.Claim">
+-----------------------------------------------------
+#&lt;index&gt;. Claim gevonden op &lt;url&gt;
+
+&quot;&lt;claim&gt;&quot;
+
+&lt;background&gt;
+     </textarea>
+     <br />
+     <h3><label for="ComplaintTemplate.SRC.Footer">Footer</label></h3>
+     <textarea id="ComplaintTemplate.SRC.Footer">
+-----------------------------------------------------
+
+Ik heb geen commerciele belangen betreffende deze klacht.
+
+&lt;name&gt;
+     </textarea>
+     <br />
+    </td>
+    <td valign="top">
+     <h3>Preview</h3>
+     <textarea class="preview" style="height:500px;" id="ComplaintTemplate.SRC.Preview"></textarea>
+    </td>
+   </tr></table>
+ </fieldset>
+</div>
+
+<div class="TabContent" id="Tab_FDA">
+ <fieldset id="Template.Authority.FDA" title="FDA Complaint Template">
+  <h2>US Food &amp; Drug Administration Complaint Template</h2>
+  <br /><a id="ResetTemplate_FDA">Reset template</a>
+  <table><tr><td>
+     <h3><label for="ComplaintTemplate.FDA.Header">Header</label></h3>
+     <textarea id="ComplaintTemplate.FDA.Header">I do not believe that &lt;company&gt; has robust evidence to back up the following claims.</textarea>
+     <br />
+     <h3><label for="ComplaintTemplate.FDA.Claim">Claim Template</label></h3>
+     <textarea id="ComplaintTemplate.FDA.Claim">
+-----------------------------------------------------
+#&lt;index&gt;. Claim found at &lt;url&gt;
+
+&quot;&lt;claim&gt;&quot;
+
+&lt;background&gt;
+     </textarea>
+     <br />
+     <h3><label for="ComplaintTemplate.FDA.Footer">Footer</label></h3>
+     <textarea id="ComplaintTemplate.FDA.Footer">
+-----------------------------------------------------
+
+I confirm that I have no commercial interest in the outcome of this complaint.
+
+Best Regards,
+
+&lt;name&gt;
+     </textarea>
+     <br />
+    </td>
+    <td valign="top">
+     <h3>Preview</h3>
+     <textarea class="preview" style="height:500px;" id="ComplaintTemplate.FDA.Preview"></textarea>
+    </td>
+   </tr></table>
+ </fieldset>
+</div>
+
+<div class="TabContent" id="Tab_CanadianCompBureau">
+ <fieldset id="Template.Authority.CanadianCompBureau" title="Competition Bureau Canada Complaint Template">
+  <h2>Competition Bureau Canada Complaint Template</h2>
+  <br /><a id="ResetTemplate_CanadianCompBureau">Reset template</a>
+  <table><tr><td>
+     <h3><label for="ComplaintTemplate.CanadianCompBureau.Header">Header</label></h3>
+     <textarea id="ComplaintTemplate.CanadianCompBureau.Header">I do not believe that &lt;company&gt; has robust evidence to back up the following claims. I believe this violates Part VII.1, 74.01 of the Competition Act (Misrepresentations to Public).</textarea>
+     <br />
+     <h3><label for="ComplaintTemplate.CanadianCompBureau.Claim">Claim Template</label></h3>
+     <textarea id="ComplaintTemplate.CanadianCompBureau.Claim">
+-----------------------------------------------------
+#&lt;index&gt;. Claim found at &lt;url&gt;
+
+&quot;&lt;claim&gt;&quot;
+
+&lt;background&gt;
+     </textarea>
+     <br />
+     <h3><label for="ComplaintTemplate.CanadianCompBureau.Footer">Footer</label></h3>
+     <textarea id="ComplaintTemplate.CanadianCompBureau.Footer">
+-----------------------------------------------------
+
+I confirm that I have no commercial interest in the outcome of this complaint.
+
+Best Regards,
+
+&lt;name&gt;
+     </textarea>
+     <br />
+    </td>
+    <td valign="top">
+     <h3>Preview</h3>
+     <textarea class="preview" style="height:500px;" id="ComplaintTemplate.CanadianCompBureau.Preview"></textarea>
+    </td>
+   </tr></table>
+ </fieldset>
+</div>
+
+<div class="TabContent" id="Tab_CanadianASC">
+ <fieldset id="Template.Authority.CanadianASC" title="Advertising Standards Canada Complaint Template">
+  <h2>Advertising Standards Canada Complaint Template</h2>
+  <br /><a id="ResetTemplate_CanadianASC">Reset template</a>
+  <table><tr><td>
+     <h3><label for="ComplaintTemplate.CanadianASC.Header">Header</label></h3>
+     <textarea id="ComplaintTemplate.CanadianASC.Header">I do not believe that &lt;company&gt; has robust evidence to back up the following claims. I believe this violates the Canadian Code of Advertising Standards, Provision 8 (professional or scientific claims).</textarea>
+     <br />
+     <h3><label for="ComplaintTemplate.CanadianASC.Claim">Claim Template</label></h3>
+     <textarea id="ComplaintTemplate.CanadianASC.Claim">
+-----------------------------------------------------
+#&lt;index&gt;. Claim found at &lt;url&gt;
+
+&quot;&lt;claim&gt;&quot;
+
+&lt;background&gt;
+     </textarea>
+     <br />
+     <h3><label for="ComplaintTemplate.CanadianASC.Footer">Footer</label></h3>
+     <textarea id="ComplaintTemplate.CanadianASC.Footer">
+-----------------------------------------------------
+
+I confirm that I have no commercial interest in the outcome of this complaint.
+
+Best Regards,
+
+&lt;name&gt;
+     </textarea>
+     <br />
+    </td>
+    <td valign="top">
+     <h3>Preview</h3>
+     <textarea class="preview" style="height:500px;" id="ComplaintTemplate.CanadianASC.Preview"></textarea>
+    </td>
+   </tr></table>
+ </fieldset>
+</div>
+
+<div class="TabContent" id="Tab_NZASA">
+ <fieldset id="Template.Authority.NZASA" title="NZASA Complaint Template">
+  <h2>NZASA Complaint Template</h2>
+  <br /><a id="ResetTemplate_NZASA">Reset template</a>
+  <table><tr><td>
+     <h3><label for="ComplaintTemplate.NZASA.Header">Header</label></h3>
+     <textarea id="ComplaintTemplate.NZASA.Header">I do not believe that &lt;company&gt; has robust evidence to back up the following claims.</textarea>
+     <br />
+     <h3><label for="ComplaintTemplate.NZASA.Claim">Claim Template</label></h3>
+     <textarea id="ComplaintTemplate.NZASA.Claim">
+-----------------------------------------------------
+#&lt;index&gt;. Claim found at &lt;url&gt;
+
+&quot;&lt;claim&gt;&quot;
+
+&lt;background&gt;
+     </textarea>
+     <br />
+     <h3><label for="ComplaintTemplate.NZASA.Footer">Footer</label></h3>
+     <textarea id="ComplaintTemplate.NZASA.Footer">
+-----------------------------------------------------
+
+I confirm that I have no commercial interest in the outcome of this complaint.
+
+Best Regards,
+
+&lt;name&gt;
+     </textarea>
+     <br />
+    </td>
+    <td valign="top">
+     <h3>Preview</h3>
+     <textarea class="preview" style="height:500px;" id="ComplaintTemplate.NZASA.Preview"></textarea>
+    </td>
+   </tr></table>
+ </fieldset>
+</div>
+
+<div class="TabContent" id="Tab_TS">
+ <fieldset id="Template.Authority.TS" title="Consumer Direct Complaint Template">
+  <h2>Consumer Direct Complaint Template</h2>
+  <br /><a id="ResetTemplate_TS">Reset template</a>
+  <table><tr><td>
+     <h3><label for="ComplaintTemplate.TS.Header">Header</label></h3>
+     <textarea id="ComplaintTemplate.TS.Header">&lt;company&gt; makes a series of false claims on their website at &lt;domain&gt;
+
+As the company will be unable to provide robust evidence to back up these claims, they are therefore operating an Unfair Commercial Practice under the Consumer Protection from Unfair Trading Regulations, 2008.</textarea>
+     <br />
+     <h3><label for="ComplaintTemplate.TS.Claim">Claim Template</label></h3>
+     <textarea id="ComplaintTemplate.TS.Claim">
+-----------------------------------------------------
+#&lt;index&gt;. Claim found at &lt;url&gt;
+
+&quot;&lt;claim&gt;&quot;
+
+&lt;background&gt;
+     </textarea>
+     <br />
+     <h3><label for="ComplaintTemplate.TS.Footer">Footer</label></h3>
+     <textarea id="ComplaintTemplate.TS.Footer">
+-----------------------------------------------------
+
+I have no commercial interest in the outcome of this complaint.
+     </textarea>
+     <br />
+    </td>
+    <td valign="top">
+     <h3>Preview</h3>
+     <textarea class="preview" style="height:500px;" id="ComplaintTemplate.TS.Preview"></textarea>
+    </td>
+   </tr></table>
+ </fieldset>
+</div>
+
+<div class="TabContent" id="Tab_ASA">
+ <fieldset id="Template.Authority.ASA" title="ASA Complaint Template">
+  <h2>ASA Complaint Template</h2>
+  <br /><a id="ResetTemplate_ASA">Reset template</a>
+  <table><tr><td>
+     <h3><label for="ComplaintTemplate.ASA.Header">Header</label></h3>
+     <textarea id="ComplaintTemplate.ASA.Header">I do not believe that &lt;company&gt; has robust evidence to back up the following claims.</textarea>
+     <br />
+     <h3><label for="ComplaintTemplate.ASA.Claim">Claim Template</label></h3>
+     <textarea id="ComplaintTemplate.ASA.Claim">
+-----------------------------------------------------
+#&lt;index&gt;. Claim found at &lt;url&gt;
+
+&quot;&lt;claim&gt;&quot;
+
+&lt;background&gt;
+     </textarea>
+     <br />
+     <h3><label for="ComplaintTemplate.ASA.Footer">Footer</label></h3>
+     <textarea id="ComplaintTemplate.ASA.Footer">
+-----------------------------------------------------
+
+I confirm that I have no commercial interest in the outcome of this complaint.
+
+Best Regards,
+
+&lt;name&gt;
+     </textarea>
+     <br />
+    </td>
+    <td valign="top">
+     <h3>Preview</h3>
+     <textarea class="preview" style="height:500px;" id="ComplaintTemplate.ASA.Preview"></textarea>
+    </td>
+   </tr></table>
+ </fieldset>
+</div>
+
+<div class="TabContent" id="Tab_ASAI">
+ <fieldset id="Template.Authority.ASAI" title="ASAI Complaint Template">
+  <h2>ASAI Complaint Template</h2>
+  <br /><a id="ResetTemplate_ASAI">Reset template</a>
+  <table><tr><td>
+     <h3><label for="ComplaintTemplate.ASAI.Header">Header</label></h3>
+     <textarea id="ComplaintTemplate.ASAI.Header">I do not believe that &lt;company&gt; has robust evidence to back up the following claims.</textarea>
+     <br />
+     <h3><label for="ComplaintTemplate.ASAI.Claim">Claim Template</label></h3>
+     <textarea id="ComplaintTemplate.ASAI.Claim">
+-----------------------------------------------------
+#&lt;index&gt;. Claim found at &lt;url&gt;
+
+&quot;&lt;claim&gt;&quot;
+
+&lt;background&gt;
+     </textarea>
+     <br />
+     <h3><label for="ComplaintTemplate.ASAI.Footer">Footer</label></h3>
+     <textarea id="ComplaintTemplate.ASAI.Footer">
+-----------------------------------------------------
+
+I confirm that I have no commercial interest in the outcome of this complaint.
+
+Best Regards,
+
+&lt;name&gt;
+     </textarea>
+     <br />
+    </td>
+    <td valign="top">
+     <h3>Preview</h3>
+     <textarea class="preview" style="height:500px;" id="ComplaintTemplate.ASAI.Preview"></textarea>
+    </td>
+   </tr></table>
+ </fieldset>
+</div>
+
+<div class="TabContent" id="Tab_DKMA">
+ <fieldset id="Template.Authority.DKMA" title="Danish Medicines Agency Template">
+  <h2>Danish Medicines Agency Complaint Template</h2>
+  <br /><a id="ResetTemplate_DKMA">Reset template</a>
+  <table><tr><td>
+     <h3><label for="ComplaintTemplate.DKMA.Header">Header</label></h3>
+     <textarea id="ComplaintTemplate.DKMA.Header">&lt;company&gt; fremsiger usande p&aring;stande p&aring; deres hjemmeside p&aring; &lt;domain&gt;
+
+Jeg anmoder Dem om at vurdere det lovlige i de fremsatte p&aring;stande:
+</textarea>
+     <br />
+     <h3><label for="ComplaintTemplate.DKMA.Claim">Claim Template</label></h3>
+     <textarea id="ComplaintTemplate.DKMA.Claim">
+-----------------------------------------------------
+#&lt;index&gt;. P&aring;stand findes p&aring; &lt;url&gt;
+
+&quot;&lt;claim&gt;&quot;
+
+&lt;background&gt;
+     </textarea>
+     <br />
+     <h3><label for="ComplaintTemplate.DKMA.Footer">Footer</label></h3>
+     <textarea id="ComplaintTemplate.DKMA.Footer">
+-----------------------------------------------------
+
+Jeg har ingen kommerciel interesse i udfaldet af denne klage.
+
+&lt;name&gt;
+
+&lt;address&gt;
+
+&lt;phone&gt;
+     </textarea>
+     <br />
+    </td>
+    <td valign="top">
+     <h3>Preview</h3>
+     <textarea class="preview" style="height:500px;" id="ComplaintTemplate.DKMA.Preview"></textarea>
+    </td>
+   </tr></table>
+ </fieldset>
+</div>
+
+<div class="TabContent" id="Tab_MHRA">
+ <fieldset id="Template.Authority.MHRA" title="MHRA Complaint Template">
+  <h2>MHRA Complaint Template</h2>
+  <br /><a id="ResetTemplate_MHRA">Reset template</a>
+  <table><tr><td>
+     <h3><label for="ComplaintTemplate.MHRA.Header">Header</label></h3>
+     <textarea id="ComplaintTemplate.MHRA.Header">I do not believe that &lt;company&gt; has robust evidence to back up the following claims.</textarea>
+     <br />
+     <h3><label for="ComplaintTemplate.MHRA.Claim">Claim Template</label></h3>
+     <textarea id="ComplaintTemplate.MHRA.Claim">
+-----------------------------------------------------
+#&lt;index&gt;. Claim found at &lt;url&gt;
+
+&quot;&lt;claim&gt;&quot;
+
+&lt;background&gt;
+     </textarea>
+     <br />
+     <h3><label for="ComplaintTemplate.MHRA.Footer">Footer</label></h3>
+     <textarea id="ComplaintTemplate.MHRA.Footer">
+-----------------------------------------------------
+     </textarea>
+     <br />
+    </td>
+    <td valign="top">
+     <h3>Preview</h3>
+     <textarea class="preview" style="height:500px;" id="ComplaintTemplate.MHRA.Preview"></textarea>
+    </td>
+   </tr></table>
+ </fieldset>
+</div>
+
+<div class="TabContent" id="Tab_CRP">
+ <fieldset id="Template.Authority.CRP" title="CRP Complaint Template">
+  <h2>CRP Complaint Template</h2>
+  <br /><a id="ResetTemplate_CRP">Reset template</a>
+  <table><tr><td>
+     <h3><label for="ComplaintTemplate.CRP.Header">Header</label></h3>
+     <textarea id="ComplaintTemplate.CRP.Header">I do not believe that &lt;company&gt; has robust evidence to back up the following claims.</textarea>
+     <br />
+     <h3><label for="ComplaintTemplate.CRP.Claim">Claim Template</label></h3>
+     <textarea id="ComplaintTemplate.CRP.Claim">
+-----------------------------------------------------
+#&lt;index&gt;. Claim found at &lt;url&gt;
+
+&quot;&lt;claim&gt;&quot;
+
+&lt;background&gt;
+     </textarea>
+     <br />
+     <h3><label for="ComplaintTemplate.CRP.Footer">Footer</label></h3>
+     <textarea id="ComplaintTemplate.CRP.Footer">
+-----------------------------------------------------
+
+I confirm that I have no commercial interest in the outcome of this complaint.
+
+Best Regards,
+
+&lt;name&gt;
+     </textarea>
+     <br />
+    </td>
+    <td valign="top">
+     <h3>Preview</h3>
+     <textarea class="preview" style="height:500px;" id="ComplaintTemplate.CRP.Preview"></textarea>
+    </td>
+   </tr></table>
+ </fieldset>
+</div>
+
+<div class="TabContent" id="Tab_ACCC">
+ <fieldset id="Template.Authority.ACCC" title="ACCC Complaint Template">
+  <h2>ACCC Complaint Template</h2>
+  <br /><a id="ResetTemplate_ACCC">Reset template</a>
+  <table><tr><td>
+     <h3><label for="ComplaintTemplate.ACCC.Header">Header</label></h3>
+     <textarea id="ComplaintTemplate.ACCC.Header">I do not believe that &lt;company&gt; has robust evidence to back up the following claims.</textarea>
+     <br />
+     <h3><label for="ComplaintTemplate.ACCC.Claim">Claim Template</label></h3>
+     <textarea id="ComplaintTemplate.ACCC.Claim">
+-----------------------------------------------------
+#&lt;index&gt;. Claim found at &lt;url&gt;
+
+&quot;&lt;claim&gt;&quot;
+
+&lt;background&gt;
+     </textarea>
+     <br />
+     <h3><label for="ComplaintTemplate.ACCC.Footer">Footer</label></h3>
+     <textarea id="ComplaintTemplate.ACCC.Footer">
+-----------------------------------------------------
+
+I confirm that I have no commercial interest in the outcome of this complaint.
+
+Best Regards,
+
+&lt;name&gt;
+     </textarea>
+     <br />
+    </td>
+    <td valign="top">
+     <h3>Preview</h3>
+     <textarea class="preview" style="height:500px;" id="ComplaintTemplate.ACCC.Preview"></textarea>
+    </td>
+   </tr></table>
+ </fieldset>
+</div>
+
+  </div>
+</section>
+
+</form>
+
+<section class="fb-tools">
+  <h3>Tools</h3>
+  <p class="muted">This permanently deletes every setting and template you've saved in FishBarrel.</p>
+  <button class="fb-btn-danger" id="btnClearLocalStorage">Clear stored settings</button>
+</section>
+
+</div>
+
+</body>
+</html>

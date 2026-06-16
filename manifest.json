@@ -1,0 +1,41 @@
+{
+  "manifest_version": 3,
+  "name": "FishBarrel",
+  "version": "3.0.0",
+  "description": "FishBarrel - a quackery reporting tool",
+  "icons": {
+    "16": "icon.png",
+    "48": "icon.png",
+    "128": "icon.png"
+  },
+  "action": {
+    "default_icon": "icon.png",
+    "default_popup": "popup.html"
+  },
+  "background": {
+    "service_worker": "background.js"
+  },
+  "content_scripts": [
+    {
+      "all_frames": true,
+      "css": ["injectStyle.css"],
+      "js": ["authorities.js", "inject.js"],
+      "matches": ["http://*/*", "https://*/*"]
+    }
+  ],
+  "permissions": [
+    "tabs",
+    "storage",
+    "scripting"
+  ],
+  "host_permissions": [
+    "http://*/*",
+    "https://*/*"
+  ],
+  "web_accessible_resources": [
+    {
+      "resources": ["duck.png"],
+      "matches": ["<all_urls>"]
+    }
+  ]
+}

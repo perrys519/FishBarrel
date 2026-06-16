@@ -1,0 +1,17 @@
+FishBarrelHLSpan.FishBarrel_highlightedByCurrentUser {
+    background-color: #FFE082;
+    box-shadow: inset 0 -2px 0 #F4B400;
+    border-radius: 2px;
+    padding: 0 1px;
+    cursor: pointer;
+}
+
+FishBarrelHLSpan.FishBarrel_highlightedByCurrentUser:hover {
+    background-color: #FFD54A;
+}
+
+FishBarrelHLSpan.FishBarrel_highlightedByOtherUser {
+    background-color: #FFF59D;
+    border-radius: 2px;
+    padding: 0 1px;
+}

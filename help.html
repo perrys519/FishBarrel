@@ -1,0 +1,80 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <title>FishBarrel: Help</title>
+  <link rel="stylesheet" href="style.css" type="text/css" />
+</head>
+<body>
+
+<div class="fb-page">
+
+<header class="fb-header">
+  <img class="fb-logo" src="duck.png" alt="" />
+  <div>
+    <div class="fb-title">FishBarrel Help</div>
+    <div class="fb-tagline">A guide to capturing and reporting misleading claims</div>
+  </div>
+</header>
+
+<div class="help">
+
+<h2>What does FishBarrel do?</h2>
+
+<p>FishBarrel makes it easier to submit complaints to advertising authorities and regulators about misleading claims on the web. It lets you capture text from any page, build a templated complaint, and then takes you to the regulator's own complaint form with the relevant fields pre&#8209;filled.</p>
+
+<p>The original FishBarrel relied on a central server for screenshot hosting, complaint logging and a community-shared database of previously reported claims. That server is no longer running, so this version of FishBarrel works entirely locally: nothing leaves your browser except the complaint you submit directly to the regulator.</p>
+
+<h2>Setting up FishBarrel</h2>
+
+<h3>Configuration</h3>
+
+<p>So you don't have to retype your contact details and templated text for every complaint, FishBarrel keeps your information and complaint templates in the options page. To reach it, click the FishBarrel icon and select <strong>Options</strong>.</p>
+
+<p>On the options page, enter your name, address and contact details, and then customise the complaint templates for each regulator. While you edit a template, a live preview shows what a sample complaint would look like.</p>
+
+<p>The data is saved as you type, so there is no save button. Everything is stored locally in your browser using <code>chrome.storage.local</code>.</p>
+
+<h3>Collecting claims for your complaint</h3>
+
+<p>Once you've entered your contact information and templates, find a website that's making misleading claims, click the FishBarrel icon, and select <strong>Capture new claims</strong>.</p>
+
+<p>When FishBarrel is gathering claims, its icon switches to an active variant.</p>
+
+<p>To capture a claim, simply select the text with your mouse. It will be highlighted. You can keep moving around the site &mdash; when you return to a page, your highlighted claims will reappear.</p>
+
+<h3>Reviewing your complaint</h3>
+
+<p>When you're ready, click the FishBarrel icon and select <strong>Review complaint</strong>.</p>
+
+<p>Enter the name of the organisation you're complaining about, optionally add background information to each claim, and remove any claims you don't want to include.</p>
+
+<p>Then click one of the buttons at the top to go to the regulator of your choice. FishBarrel will open the regulator's own complaint form in a new tab and fill in the fields it knows about. Review the form, then submit it on the regulator's site as normal.</p>
+
+<h2>Known issues</h2>
+
+<h3>Highlighting</h3>
+<p>Sometimes highlighting doesn't quite work right &mdash; this seems more likely on pages with complicated lists. The text is still captured for the complaint even if the highlight doesn't render.</p>
+
+<h3>iFrames</h3>
+<p>If a page has iFrames, you cannot select any of the text within the iFrame. This is a Chrome extension limitation.</p>
+
+<h3>Stale regulator URLs</h3>
+<p>The regulator URLs hard-coded in FishBarrel have not been updated for a long time. Some of them will likely no longer work as-is, and the form fields on the regulator's site may have changed shape, in which case the autofill may miss fields. You'll always have a chance to review and edit the form before submitting it.</p>
+
+<h2>Privacy</h2>
+
+<p>This version of FishBarrel keeps everything local:</p>
+
+<ul>
+  <li>Your name, contact details and complaint templates are stored using the browser's local extension storage. They never leave your computer.</li>
+  <li>The claims you capture while in gathering mode are kept in browser-session storage and are forgotten when you clear the complaint or close the browser.</li>
+  <li>The only network traffic FishBarrel produces is when you navigate to the regulator's complaint form. From there, anything you submit goes directly to that regulator, exactly as if you'd navigated to their form yourself.</li>
+</ul>
+
+</div>
+
+</div>
+
+</body>
+</html>

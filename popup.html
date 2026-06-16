@@ -1,0 +1,53 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <title>FishBarrel</title>
+  <link rel="stylesheet" href="style.css" type="text/css" />
+  <script src="include.js"></script>
+  <script src="popup.js"></script>
+</head>
+<body class="fb-popup">
+
+<div class="fb-popup-inner">
+
+  <div class="fb-popup-head">
+    <img src="duck.png" alt="" />
+    <div>
+      <div class="fb-popup-title">FishBarrel</div>
+      <div class="fb-tagline">Report misleading claims</div>
+    </div>
+  </div>
+
+  <div class="fb-popup-status" id="StatusBlock">
+    Status<span class="fb-status-pill" id="StatusText">Inactive</span>
+  </div>
+
+  <div class="fb-popup-actions">
+    <a href="#" id="Start" class="fb-action-primary">
+      <span>Capture new claims<small>Highlight misleading text on the page</small></span>
+      <span class="fb-chev">&rsaquo;</span>
+    </a>
+    <a href="#" id="Resume">
+      <span>Resume gathering<small id="resumeDescription"></small></span>
+      <span class="fb-chev">&rsaquo;</span>
+    </a>
+    <a href="#" id="Stop">
+      <span>Stop gathering</span>
+      <span class="fb-chev">&rsaquo;</span>
+    </a>
+    <a href="reviewComplaint.html" target="ReviewComplaint" id="ReviewComplaint">
+      <span>Review complaint</span>
+      <span class="fb-chev">&rsaquo;</span>
+    </a>
+  </div>
+
+  <div class="fb-popup-footer">
+    <a href="#" id="Options">Options</a>
+    <a href="#" id="Help">Help</a>
+  </div>
+
+</div>
+
+</body>
+</html>

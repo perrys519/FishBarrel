@@ -1,0 +1,39 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <title>FishBarrel: Review Complaint</title>
+  <link rel="stylesheet" href="style.css" type="text/css" />
+  <script src="authorities.js"></script>
+  <script src="include.js"></script>
+  <script src="reviewComplaint.js"></script>
+</head>
+<body>
+
+<div class="fb-page">
+
+<header class="fb-header">
+  <img class="fb-logo" src="duck.png" alt="" />
+  <div>
+    <div class="fb-title">Review your complaint</div>
+    <div class="fb-tagline">Tidy up the claims you captured, then pick a regulator to submit to</div>
+  </div>
+</header>
+
+<section class="fb-card">
+  <h2>Send your complaint to&hellip;</h2>
+  <p class="muted">Each button opens that regulator's own complaint form in a new tab with the fields pre&#8209;filled. You still review and submit it on their site.</p>
+  <div id="StartComplaintButtons" class="fb-compose-buttons"></div>
+
+  <div class="fb-org-row">
+    <label for="organisationname">Organisation you're complaining about</label>
+    <input id="organisationname" placeholder="e.g. Quantum Holistic Healing Limited" />
+  </div>
+</section>
+
+<div id="ClaimEdit" class="ClaimEdit"></div>
+
+</div>
+
+</body>
+</html>
