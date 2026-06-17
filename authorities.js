@@ -686,6 +686,20 @@ ASAAuth.AutoFillForm = function () {
 // Walk through every field FishBarrel knows how to populate. Each call is a
 // no-op for fields not currently in the DOM, so it's safe to invoke repeatedly
 // as the form progresses through steps.
+// Resolve the actual complaint form on the page (not the search/login forms
+// that share the layout). Prefer the canonical id, fall back to any form whose
+// action endpoint looks like a complaint-step submission.
+ASAAuth.findComplaintForm = function () {
+    var f = document.getElementById("form-make-a-complaint");
+    if (f) return f;
+    for (var i = 0; i < document.forms.length; i++) {
+        if ((document.forms[i].action || "").indexOf("saveComplaintStep") !== -1) {
+            return document.forms[i];
+        }
+    }
+    return null;
+};
+
 ASAAuth.TryFill = function (response) {
     var settings = response.settings || {};
 
@@ -693,7 +707,7 @@ ASAAuth.TryFill = function (response) {
     // CSRF token and a Continue button. Auto-click it so the user lands
     // directly on the first step with fillable fields. Subsequent Continues
     // are left to the user so they can review what FishBarrel filled in.
-    var form = document.getElementById("form-make-a-complaint") || document.forms[0];
+    var form = ASAAuth.findComplaintForm();
     if (form && form.action && form.action.indexOf("saveComplaintStepintro") !== -1 && !ASAAuth._introClicked) {
         var introBtn = document.getElementById("continue-button");
         if (introBtn) {
@@ -703,29 +717,40 @@ ASAAuth.TryFill = function (response) {
         }
     }
 
-    // Mark the complainant as a member of the public.
+    // Mark the complainant as a member of the public (radio appears on the
+    // first step after the intro).
     FishBarrel.SelectRadioByValue("about_the_complaint", ASAAuth.PUBLIC_COMPLAINT_GUID);
 
-    // Contact details. Names are best-guesses based on the JS bundle's
-    // references and ASA's CFML field-naming conventions; we try a handful of
-    // candidates per field so a small rename on ASA's side doesn't break us.
+    // Personal-detail field names confirmed against the live form (snapshot
+    // 2026-06-17). The fallback candidates stay for other authorities.
     FishBarrel.FillFirstMatch(["title", "salutation"], settings.title);
     FishBarrel.FillFirstMatch(["first_name", "firstname", "fname", "given_name"], settings.firstName);
     FishBarrel.FillFirstMatch(["last_name", "surname", "lname", "family_name"], settings.surname);
-    FishBarrel.FillFirstMatch(["address_1", "address1", "address", "street", "street_address"], settings.address);
+    FishBarrel.FillFirstMatch(["email", "email_address"], settings.email);
+    FishBarrel.FillFirstMatch(["confirm_email", "email_address_confirm", "retype_email"], settings.email);
+
+    // Address: ASA's registration step has address_1, address_2, address_3 plus
+    // town/postcode/country. There's no separate county input, so we splice
+    // any stored county into the next free address line.
+    ASAAuth.fillAddress(settings);
+
     FishBarrel.FillFirstMatch(["town", "city"], settings.city);
-    FishBarrel.FillFirstMatch(["county", "region", "state"], settings.county);
     FishBarrel.FillFirstMatch(["postcode", "post_code", "zip", "zipcode"], settings.postcode);
     FishBarrel.FillFirstMatch(["country"], "United Kingdom");
     FishBarrel.FillFirstMatch(["telephone", "phone", "phone_number", "telephone_number"], settings.phonenumber);
-    FishBarrel.FillFirstMatch(["email", "email_address"], settings.email);
-    FishBarrel.FillFirstMatch(["confirm_email", "email_address_confirm", "retype_email"], settings.email);
+
+    // The registration step also has an `organisation_name` field for the
+    // user's employer — INTENTIONALLY NOT FILLED. The advertiser the user is
+    // complaining about is a different concept and lives on the later
+    // complaint-detail step under a different field name (TBC). Putting the
+    // advertiser into the registration's organisation_name would be wrong.
 
     // Where the ad was seen.
     FishBarrel.FillFirstMatch(["advert_url", "advertisement_url", "url", "url_seen", "where_seen"], response.WebsiteUrl);
 
-    // Advertiser / organisation. ASA also asks for a product description.
-    FishBarrel.FillFirstMatch(["advertiser", "advertiser_name", "company", "company_name", "organisation", "organization"], response.organisationName);
+    // Advertiser. `organisation_name` deliberately excluded — see note above;
+    // it's the registration's "employer" field, not the advertiser.
+    FishBarrel.FillFirstMatch(["advertiser", "advertiser_name", "company", "company_name"], response.organisationName);
     FishBarrel.FillFirstMatch(["product", "product_description", "product_service", "what"], "Alternative Medicine");
 
     // The complaint body. Try several plausible field names — ASA's current
@@ -734,6 +759,27 @@ ASAAuth.TryFill = function (response) {
 
     // Mark the in-progress complaint as filled so the popup state reflects it.
     chrome.runtime.sendMessage({ type: "setComplaintFilled" });
+};
+
+// Spread the user's address across address_1, address_2, address_3. The
+// stored address may be a single line ("123 Main St") or multi-line ("Flat 4
+// / 123 Main St"); we also append the stored county if there's space.
+ASAAuth.fillAddress = function (settings) {
+    var lines = ((settings.address || "") + "")
+        .split(/\r?\n/)
+        .map(function (l) { return l.trim(); })
+        .filter(Boolean);
+
+    var county = ((settings.county || "") + "").trim();
+    if (county && lines.indexOf(county) === -1) lines.push(county);
+
+    FishBarrel.FillFirstMatch(["address_1", "address1", "address", "street", "street_address"], lines[0] || "");
+    if (document.getElementsByName("address_2").length > 0) {
+        FishBarrel.FillByName("address_2", lines[1] || "");
+    }
+    if (document.getElementsByName("address_3").length > 0) {
+        FishBarrel.FillByName("address_3", lines[2] || "");
+    }
 };
 Authorities[ASAAuth.Key] = ASAAuth;
 

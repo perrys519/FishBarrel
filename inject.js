@@ -229,13 +229,27 @@ FishBarrel.FormRecorder = {
         this.lastSnapshotSig = sig;
         this.snapshotCount++;
 
-        var form = document.forms[0];
+        // Pages often have several forms (search bar at top, login, the real
+        // target form). Reporting just forms[0].action is misleading, so list
+        // them all and tag each field with the form it belongs to.
+        var formsList = [];
+        for (var fi = 0; fi < document.forms.length; fi++) {
+            var f = document.forms[fi];
+            formsList.push({
+                index: fi,
+                id: f.id || null,
+                name: f.name || null,
+                action: f.action || null,
+                method: (f.method || "").toLowerCase() || null,
+                fieldCount: f.elements ? f.elements.length : 0
+            });
+        }
+
         var payload = {
             tag: this.tag,
             snapshotNumber: this.snapshotCount,
             url: window.location.href,
-            formAction: form ? form.action : null,
-            formMethod: form ? form.method : null,
+            forms: formsList,
             fields: fields,
             buttons: buttons
         };
@@ -248,13 +262,20 @@ FishBarrel.FormRecorder = {
     },
 
     describeField: function (el) {
+        var formIndex = null;
+        if (el.form) {
+            for (var fi = 0; fi < document.forms.length; fi++) {
+                if (document.forms[fi] === el.form) { formIndex = fi; break; }
+            }
+        }
         var o = {
             tag: el.tagName.toLowerCase(),
             type: el.type || null,
             name: el.name || null,
             id: el.id || null,
             label: this.labelFor(el),
-            visible: this.isVisible(el)
+            visible: this.isVisible(el),
+            formIndex: formIndex
         };
         if (el.placeholder) o.placeholder = el.placeholder;
         if (el.required || el.hasAttribute('required')) o.required = true;
