@@ -12,12 +12,29 @@
 
 var FishBarrelAI = (function () {
     var DEFAULT_PROMPT_TEMPLATE = [
-        'You are a strict compliance auditor. Analyze the "Source Text" provided below to find violations of {REGULATOR}: claims that a health, medical or psychological treatment is effective without robust scientific evidence (homeopathy, supplements, "natural cures", testimonials about specific conditions, etc).',
+        'You are a strict compliance auditor. Analyze the "Source Text" below to find violations of {REGULATOR}: quotes that claim a health, medical or psychological treatment is effective for a specific condition without robust scientific evidence. Examples of WHAT TO FLAG:',
+        '  - "Homeopathy can cure your arthritis."',
+        '  - "Helped my child with severe anger problems."',
+        '  - "This treatment rebalances the body and restores health."',
+        '  - Testimonials describing successful treatment of a named condition.',
+        '',
+        'DO NOT flag any of the following — set is_substantive_claim to false for them:',
+        '  - Biographical info, qualifications, degrees, memberships, years of experience',
+        '  - Descriptions of services or logistics ("I see patients at home", "telephone consultations available")',
+        '  - Contact details, addresses, opening hours, names',
+        '  - Factual statements about data handling, privacy, fees, GDPR',
+        '  - Disclaimers',
+        '  - Generic descriptions of what a therapy involves without claiming it works',
+        '',
+        'For each candidate quote, populate the JSON object with:',
+        '  - quote: exact word-for-word substring of the Source Text',
+        '  - reason: one sentence on why it violates {REGULATOR}',
+        '  - is_substantive_claim: true ONLY if the quote actually asserts efficacy for a condition; false for anything in the "DO NOT flag" list',
         '',
         'CRITICAL RULES:',
-        '1. Every "quote" MUST be an exact, word-for-word string match from the "Source Text".',
-        '2. Do NOT invent, assume, or paraphrase any quotes. If a sentence is not in the text, do not include it.',
-        '3. If no clear violations are found, return: {"violations": []}',
+        '1. Every "quote" MUST be an exact, word-for-word string match from the Source Text. Do NOT paraphrase or invent.',
+        '2. If a candidate quote is in the "DO NOT flag" list, OMIT it entirely. Do not include it with is_substantive_claim: false unless you are uncertain.',
+        '3. If no clear efficacy claims are found, return: {"violations": []}',
         '',
         'Source Text:',
         '"""',
@@ -34,14 +51,42 @@ var FishBarrelAI = (function () {
                     type: "object",
                     properties: {
                         quote: { type: "string" },
-                        reason: { type: "string" }
+                        reason: { type: "string" },
+                        is_substantive_claim: { type: "boolean" }
                     },
-                    required: ["quote", "reason"]
+                    required: ["quote", "reason", "is_substantive_claim"]
                 }
             }
         },
         required: ["violations"]
     };
+
+    // Belt-and-braces filter on the model's reason text. When Nano can't find
+    // a real violation it tends to fill the JSON anyway and admit in the
+    // reason that the quote isn't actually a claim. These phrases catch the
+    // most common admissions.
+    var NEGATIVE_REASON_PATTERNS = [
+        /\bnot (?:a|an|directly a) claim\b/i,
+        /\bnot (?:directly )?(?:a )?(?:claim of )?efficacy\b/i,
+        /\bfactual (?:statement|description|information)\b/i,
+        /\bbiographical\b/i,
+        /\bqualifications?\b/i,
+        /\bnot (?:a )?violation\b/i,
+        /\bappointment logistics\b/i,
+        /\bcontact (?:details?|information)\b/i,
+        /\b(?:GDPR|data privacy)\b/i,
+        /\b(?:does not|doesn['’]t) (?:directly )?(?:claim|assert|imply)\b/i,
+        /\bcould be interpreted\b/i,
+        /\bpotentially (?:misleading|imply)\b/i
+    ];
+
+    function reasonLooksLikeSelfAdmission(reason) {
+        if (!reason) return false;
+        for (var i = 0; i < NEGATIVE_REASON_PATTERNS.length; i++) {
+            if (NEGATIVE_REASON_PATTERNS[i].test(reason)) return true;
+        }
+        return false;
+    }
 
     // Conservative character budget per chunk. Nano's per-prompt cap is
     // ~1024 tokens (~3.5–4 KB of English text). We use measureContextUsage
@@ -307,6 +352,23 @@ var FishBarrelAI = (function () {
                 }
                 if (seenQuotes[actual.toLowerCase()]) {
                     console.log("[FishBarrelAI] violation #" + (v + 1) + " duplicate, dropped:", JSON.stringify(actual.substring(0, 80)));
+                    dropped++;
+                    continue;
+                }
+                // Sense-check 1: the model committed to whether this is actually
+                // a substantive claim. Trust that boolean over the fact that it
+                // bothered to include the quote at all.
+                if (violation.is_substantive_claim === false) {
+                    console.log("[FishBarrelAI] violation #" + (v + 1) + " SELF-FLAGGED as not a claim by model, dropped:", JSON.stringify(actual.substring(0, 80)));
+                    dropped++;
+                    continue;
+                }
+                // Sense-check 2: even when is_substantive_claim is true or
+                // missing, the reason text often gives the model away —
+                // "factual statement of qualifications", "not a claim of
+                // efficacy", "could be interpreted as", etc.
+                if (reasonLooksLikeSelfAdmission(violation.reason)) {
+                    console.log("[FishBarrelAI] violation #" + (v + 1) + " reason admits non-claim, dropped:", JSON.stringify(actual.substring(0, 80)), "reason:", violation.reason);
                     dropped++;
                     continue;
                 }
