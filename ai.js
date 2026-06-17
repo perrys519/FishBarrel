@@ -433,23 +433,28 @@ var FishBarrelAI = (function () {
                         temperature: SESSION_TEMPERATURE,
                         topK: SESSION_TOP_K
                     });
-                    if (!isRescan && i === 0) console.log("[FishBarrelAI] session created; contextWindow:", session.contextWindow, "tokens, temperature:", SESSION_TEMPERATURE, "topK:", SESSION_TOP_K);
+                    if (i === 0) console.log("[FishBarrelAI] session created; contextWindow:", session.contextWindow, "tokens, temperature:", SESSION_TEMPERATURE, "topK:", SESSION_TOP_K);
                 } catch (e) {
                     console.log("[FishBarrelAI] LanguageModel.create FAILED on chunk " + (i + 1) + ":", e);
                     continue;
                 }
 
                 var prompt = buildPrompt(template, regulator, chunks[i]);
-                if (!isRescan) {
-                    console.log("[FishBarrelAI] chunk " + (i + 1) + "/" + chunks.length + " prompt (" + prompt.length + " chars, first 400):", prompt.substring(0, 400) + (prompt.length > 400 ? "…" : ""));
-                    try {
-                        if (typeof session.measureContextUsage === "function") {
-                            var cost = await session.measureContextUsage(prompt, { responseConstraint: VIOLATIONS_SCHEMA });
-                            console.log("[FishBarrelAI] chunk " + (i + 1) + " context cost:", cost, "/", session.contextWindow);
-                        }
-                    } catch (e) { /* measure is optional */ }
-                }
+
+                console.groupCollapsed("[FishBarrelAI]" + (isRescan ? " rescan" : "") + " chunk " + (i + 1) + "/" + chunks.length + " — " + prompt.length + " chars in, " + chunks[i].length + " chars source");
+                console.log("SOURCE TEXT (chunk " + (i + 1) + "):\n" + chunks[i]);
+                console.log("FULL PROMPT (chunk " + (i + 1) + "):\n" + prompt);
+                try {
+                    if (typeof session.measureContextUsage === "function") {
+                        var cost = await session.measureContextUsage(prompt, { responseConstraint: VIOLATIONS_SCHEMA });
+                        console.log("context cost:", cost, "/", session.contextWindow);
+                    }
+                } catch (e) { /* measure is optional */ }
+
                 var result = await runPromptForChunkVerbose(session, prompt, i + 1);
+                console.log("PARSED RESPONSE (chunk " + (i + 1) + "):", { organisationName: result.organisationName, violations: result.violations });
+                console.groupEnd();
+
                 if (!firstOrgName && result.organisationName) firstOrgName = result.organisationName;
                 allViolations = allViolations.concat(result.violations || []);
 
