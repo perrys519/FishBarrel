@@ -93,12 +93,21 @@ var FishBarrelAI = (function () {
         return false;
     }
 
-    // Conservative character budget per chunk. Nano's per-prompt cap is
-    // ~1024 tokens (~3.5–4 KB of English text). We use measureContextUsage
-    // when a session is available, but this is the starting upper bound for
-    // chunk-splitting before we even create the session.
-    var TARGET_CHARS_PER_CHUNK = 3000;
+    // Per-chunk character budget. Nano's session contextWindow is around
+    // 9216 tokens on current Chrome; ~4.5 chars/token in English means a
+    // prompt of ~7-8 KB sits comfortably inside it (the template adds another
+    // 2 KB / ~500 tokens). Keeping chunks bigger means fewer prompts and
+    // testimonials don't end up split across a chunk boundary.
+    var TARGET_CHARS_PER_CHUNK = 6000;
+    var MIN_CHARS_PER_CHUNK = 400;
     var MAX_CHUNKS_PER_PAGE = 5;
+
+    // Lower-than-default temperature for more deterministic compliance scans.
+    // Default (~1.0) makes Nano stochastic — same input, different answers —
+    // which manifested as testimonials being flagged on one scan and missed
+    // on the next. 0.3 keeps it focused without freezing it.
+    var SESSION_TEMPERATURE = 0.3;
+    var SESSION_TOP_K = 3;
 
     function regulatorForCountry(country) {
         if (!country || typeof Authorities === "undefined") {
@@ -170,6 +179,16 @@ var FishBarrelAI = (function () {
             current = current ? current + "\n\n" + p : p;
         }
         flush();
+
+        // Merge any sub-MIN_CHARS_PER_CHUNK tail chunks back into the previous
+        // chunk. Nano returns kErrorUnknown on near-empty prompts, and a
+        // 25-char chunk can't reasonably contain a claim on its own anyway.
+        for (var m = chunks.length - 1; m > 0; m--) {
+            if (chunks[m].length < MIN_CHARS_PER_CHUNK) {
+                chunks[m - 1] = chunks[m - 1] + "\n\n" + chunks[m];
+                chunks.splice(m, 1);
+            }
+        }
 
         if (chunks.length > MAX_CHUNKS_PER_PAGE) {
             console.log("[FishBarrelAI] page produced " + chunks.length + " chunks; scanning first " + MAX_CHUNKS_PER_PAGE + " only");
@@ -400,21 +419,26 @@ var FishBarrelAI = (function () {
             console.log("[FishBarrelAI]" + (isRescan ? " RESCAN" : "") + " page split into", chunks.length, "chunk(s); sizes:", chunks.map(function (c) { return c.length; }));
             if (chunks.length === 0) return 0;
 
-            var session;
-            try {
-                session = await LanguageModel.create({
-                    expectedInputs: [{ type: "text", languages: ["en"] }],
-                    expectedOutputs: [{ type: "text", languages: ["en"] }]
-                });
-                if (!isRescan) console.log("[FishBarrelAI] session created; contextWindow:", session.contextWindow, "tokens");
-            } catch (e) {
-                console.log("[FishBarrelAI] LanguageModel.create FAILED:", e);
-                return 0;
-            }
-
             var allViolations = [];
             var firstOrgName = "";
             for (var i = 0; i < chunks.length; i++) {
+                // Fresh session per chunk. Nano sometimes returns kErrorUnknown
+                // after running a prompt on the same session — isolating chunks
+                // avoids one chunk's failure infecting the next.
+                var session;
+                try {
+                    session = await LanguageModel.create({
+                        expectedInputs: [{ type: "text", languages: ["en"] }],
+                        expectedOutputs: [{ type: "text", languages: ["en"] }],
+                        temperature: SESSION_TEMPERATURE,
+                        topK: SESSION_TOP_K
+                    });
+                    if (!isRescan && i === 0) console.log("[FishBarrelAI] session created; contextWindow:", session.contextWindow, "tokens, temperature:", SESSION_TEMPERATURE, "topK:", SESSION_TOP_K);
+                } catch (e) {
+                    console.log("[FishBarrelAI] LanguageModel.create FAILED on chunk " + (i + 1) + ":", e);
+                    continue;
+                }
+
                 var prompt = buildPrompt(template, regulator, chunks[i]);
                 if (!isRescan) {
                     console.log("[FishBarrelAI] chunk " + (i + 1) + "/" + chunks.length + " prompt (" + prompt.length + " chars, first 400):", prompt.substring(0, 400) + (prompt.length > 400 ? "…" : ""));
@@ -428,8 +452,9 @@ var FishBarrelAI = (function () {
                 var result = await runPromptForChunkVerbose(session, prompt, i + 1);
                 if (!firstOrgName && result.organisationName) firstOrgName = result.organisationName;
                 allViolations = allViolations.concat(result.violations || []);
+
+                try { session.destroy(); } catch (e) { /* ignore */ }
             }
-            try { session.destroy(); } catch (e) { /* ignore */ }
 
             if (firstOrgName) {
                 setOrgNameIfEmpty(firstOrgName);
