@@ -216,9 +216,25 @@ async function spiderVisit(url) {
     // aiScanComplete signal in maybeScan this normally resolves in < 1 s for
     // already-scanned URLs and < 10 s for fresh ones. The 25 s timeout is a
     // safety net for pages where the content script never reports back.
+    var waitStart = Date.now();
     var reason = await waitForAiScanComplete(25000);
     if (!Spider.active) return;
-    console.log("[FishBarrel] spider tab", tab.id, "scan wait resolved via:", reason);
+    console.log("[FishBarrel] spider tab", tab.id, "scan wait resolved via:", reason, "after", Date.now() - waitStart, "ms");
+
+    // Settling window. Wix and other client-rendered sites finish hydrating
+    // AFTER document-idle, which is when our content script first runs. The
+    // initial scan therefore catches a half-rendered page; the
+    // MutationObserver picks up the rest and re-scans. We hold the tab open
+    // an extra few seconds so those rescans (and their addClaim messages)
+    // land before we move on and close the tab.
+    var elapsed = Date.now() - waitStart;
+    var settleMs = 6000;
+    if (elapsed < settleMs) {
+        var extra = settleMs - elapsed;
+        console.log("[FishBarrel] spider tab", tab.id, "settling for an extra", extra, "ms to catch hydration rescans");
+        await new Promise(function (r) { setTimeout(r, extra); });
+    }
+    if (!Spider.active) return;
 
     var links = await harvestLinksFromTab(tab.id);
     var added = 0;
