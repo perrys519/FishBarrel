@@ -207,7 +207,6 @@ FishBarrel.FormRecorder = {
         }).observe(document.body, { childList: true, subtree: true });
 
         document.addEventListener('change', function (e) { self.logEvent('change', e); }, true);
-        document.addEventListener('input', function (e) { self.logEvent('input', e); }, true);
         document.addEventListener('click', function (e) { self.logClick(e); }, true);
     },
 
@@ -356,27 +355,36 @@ FishBarrel.FormRecorder = {
         var el = e.target;
         if (!el || !el.tagName) return;
         if (['INPUT', 'SELECT', 'TEXTAREA'].indexOf(el.tagName) === -1) return;
-        // Only log change events for selects/checkboxes/radios; otherwise the
-        // per-keystroke input events drown the console out.
-        if (kind === 'input' && el.tagName !== 'TEXTAREA') return;
-        if (kind === 'change' && (el.type === 'text' || el.type === 'email' || el.type === 'tel' || el.type === 'url' || el.type === 'password')) {
-            // Don't print the typed value — but DO log that the field was used,
-            // along with its identifiers, since that's the wiring info I need.
+
+        var t = el.type || "";
+        var isFreeText = el.tagName === 'TEXTAREA'
+            || ['text', 'email', 'tel', 'url', 'password', 'search', 'number'].indexOf(t) !== -1;
+
+        if (isFreeText) {
+            // Log the field identifiers but never the typed content — the
+            // wiring info is all I need and there's no reason to dump the
+            // user's complaint body or contact details into a shareable
+            // console buffer.
             console.log("[FishBarrel] " + kind + " on field", {
+                tag: el.tagName.toLowerCase(),
+                type: t,
                 name: el.name || null,
                 id: el.id || null,
-                label: this.labelFor(el),
-                type: el.type
+                label: this.labelFor(el)
             });
             return;
         }
+
+        // Selects / radios / checkboxes: values are safe to log — they're
+        // predefined choices, not user-typed content, and the value is the
+        // wiring info I need to encode autofill choices.
         console.log("[FishBarrel] " + kind, {
             name: el.name || null,
             id: el.id || null,
             label: this.labelFor(el),
-            type: el.type,
+            type: t,
             value: el.value,
-            checked: (el.type === 'checkbox' || el.type === 'radio') ? el.checked : undefined
+            checked: (t === 'checkbox' || t === 'radio') ? el.checked : undefined
         });
     },
 

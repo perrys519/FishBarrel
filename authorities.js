@@ -764,9 +764,10 @@ ASAAuth.TryFill = function (response) {
     FishBarrel.FillFirstMatch(["advertiser", "advertiser_name", "company", "company_name"], response.organisationName);
     FishBarrel.FillFirstMatch(["product", "product_description", "product_service", "what"], "Alternative Medicine");
 
-    // The complaint body. Try several plausible field names — ASA's current
-    // form names this field somewhere in the "details of complaint" step.
-    FishBarrel.FillFirstMatch(["complaint", "complaint_details", "complaint_description", "description", "details", "complaint_text", "your_complaint"], response.body);
+    // The complaint body. ASA's textarea is `description_of_complaint`
+    // (confirmed against the live form). Fallback names kept for other
+    // authorities and any future renames.
+    FishBarrel.FillFirstMatch(["description_of_complaint", "complaint", "complaint_details", "complaint_description", "description", "details", "complaint_text", "your_complaint"], response.body);
 
     // Mark the in-progress complaint as filled so the popup state reflects it.
     chrome.runtime.sendMessage({ type: "setComplaintFilled" });
