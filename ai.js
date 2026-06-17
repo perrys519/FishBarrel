@@ -546,57 +546,74 @@ var FishBarrelAI = (function () {
         return h;
     }
 
+    // url -> watcher state { observer, debounceTimer, maxWaitTimer, stopped }
+    // — values are objects so we can tear them down individually.
+    var FishBarrelAIWatchers = {};
+
     function watchForDynamicContent(url, initialText) {
         if (typeof MutationObserver === "undefined" || !document.body) return;
         if (FishBarrelAIWatchers[url]) return; // already watching this URL
-        FishBarrelAIWatchers[url] = true;
 
-        var lastHash = simpleHash(initialText || "");
-        var lastScanAt = Date.now();
-        var debounceTimer = null;
-        var maxWaitTimer = null;
-        var scanning = false;
+        var state = {
+            observer: null,
+            debounceTimer: null,
+            maxWaitTimer: null,
+            lastHash: simpleHash(initialText || ""),
+            lastScanAt: Date.now(),
+            scanning: false,
+            stopped: false
+        };
+        FishBarrelAIWatchers[url] = state;
 
-        function fireScan() {
-            if (debounceTimer) { clearTimeout(debounceTimer); debounceTimer = null; }
-            if (maxWaitTimer) { clearTimeout(maxWaitTimer); maxWaitTimer = null; }
+        async function fireScan() {
+            if (state.debounceTimer) { clearTimeout(state.debounceTimer); state.debounceTimer = null; }
+            if (state.maxWaitTimer) { clearTimeout(state.maxWaitTimer); state.maxWaitTimer = null; }
 
-            if (scanning) return;
+            if (state.stopped || state.scanning) return;
+
+            // Defence-in-depth: even if the unhighlight signal hasn't reached
+            // us yet, double-check with the background that capture is still
+            // on before burning a model call. This catches the case where the
+            // observer fired between EndCapture and the tear-down message.
+            var stillCapturing = await isStillCapturing();
+            if (!stillCapturing) {
+                console.log("[FishBarrelAI] capture turned off, tearing down watcher for", url);
+                stopWatcher(url);
+                return;
+            }
 
             var now = Date.now();
-            if (now - lastScanAt < MIN_RESCAN_INTERVAL_MS) {
-                // Throttled. Reset the debounce so we try again later.
-                debounceTimer = window.setTimeout(fireScan, MIN_RESCAN_INTERVAL_MS - (now - lastScanAt));
+            if (now - state.lastScanAt < MIN_RESCAN_INTERVAL_MS) {
+                state.debounceTimer = window.setTimeout(fireScan, MIN_RESCAN_INTERVAL_MS - (now - state.lastScanAt));
                 return;
             }
 
             var newText = (document.body && document.body.innerText) || "";
             var newHash = simpleHash(newText);
-            if (newHash === lastHash) {
-                // No substantive text change; observed mutations were
-                // attribute/style/animation noise. Don't burn a model call.
-                return;
-            }
+            if (newHash === state.lastHash) return;
 
-            lastHash = newHash;
-            lastScanAt = now;
-            scanning = true;
+            state.lastHash = newHash;
+            state.lastScanAt = now;
+            state.scanning = true;
             console.log("[FishBarrelAI] dynamic content detected on", url, "— re-scanning");
-            performScan(url, newText, /*isRescan=*/true).finally(function () {
-                scanning = false;
-            });
+            try {
+                await performScan(url, newText, /*isRescan=*/true);
+            } finally {
+                state.scanning = false;
+            }
         }
 
         function schedule() {
-            if (debounceTimer) clearTimeout(debounceTimer);
-            debounceTimer = window.setTimeout(fireScan, SCAN_DEBOUNCE_MS);
-            if (!maxWaitTimer) {
-                maxWaitTimer = window.setTimeout(fireScan, SCAN_MAX_WAIT_MS);
+            if (state.stopped) return;
+            if (state.debounceTimer) clearTimeout(state.debounceTimer);
+            state.debounceTimer = window.setTimeout(fireScan, SCAN_DEBOUNCE_MS);
+            if (!state.maxWaitTimer) {
+                state.maxWaitTimer = window.setTimeout(fireScan, SCAN_MAX_WAIT_MS);
             }
         }
 
-        var observer = new MutationObserver(schedule);
-        observer.observe(document.body, {
+        state.observer = new MutationObserver(schedule);
+        state.observer.observe(document.body, {
             childList: true,
             subtree: true,
             characterData: true
@@ -604,7 +621,35 @@ var FishBarrelAI = (function () {
         console.log("[FishBarrelAI] watching", url, "for dynamic content changes");
     }
 
-    var FishBarrelAIWatchers = {};
+    function stopWatcher(url) {
+        var state = FishBarrelAIWatchers[url];
+        if (!state) return;
+        state.stopped = true;
+        if (state.observer) {
+            try { state.observer.disconnect(); } catch (e) { /* ignore */ }
+        }
+        if (state.debounceTimer) clearTimeout(state.debounceTimer);
+        if (state.maxWaitTimer) clearTimeout(state.maxWaitTimer);
+        delete FishBarrelAIWatchers[url];
+    }
+
+    function stopAllWatchers() {
+        var urls = Object.keys(FishBarrelAIWatchers);
+        if (urls.length === 0) return;
+        console.log("[FishBarrelAI] tearing down", urls.length, "watcher(s)");
+        for (var i = 0; i < urls.length; i++) {
+            stopWatcher(urls[i]);
+        }
+    }
+
+    function isStillCapturing() {
+        return new Promise(function (resolve) {
+            chrome.runtime.sendMessage({ type: "checkCapture" }, function (response) {
+                void chrome.runtime.lastError;
+                resolve(!!(response && response.capture));
+            });
+        });
+    }
 
     // Verbose variant of runPromptForChunk — logs raw response for debugging.
     // Returns { organisationName, violations }.
@@ -667,6 +712,7 @@ var FishBarrelAI = (function () {
         maybeScan: maybeScan,
         availability: availability,
         clearScannedUrls: clearScannedUrls,
+        stopAllWatchers: stopAllWatchers,
         DEFAULT_PROMPT_TEMPLATE: DEFAULT_PROMPT_TEMPLATE,
         // exposed for the settings page's prompt template editor
         regulatorForCountry: regulatorForCountry,

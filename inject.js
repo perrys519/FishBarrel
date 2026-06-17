@@ -513,6 +513,21 @@ FishBarrel.ComplaintSent = function (authority) {
 chrome.runtime.onMessage.addListener(function (request, sender, sendResponse) {
     if (request && request.type == "unhighlightAll") {
         FishBarrel.UnhighlightAll();
+        // Capture is being turned off — tear down the AI MutationObserver
+        // and any pending debounced re-scans so the page stops being
+        // watched. Without this the observer kept running and dynamic
+        // content kept triggering scans even with capture off.
+        if (typeof FishBarrelAI !== "undefined" && FishBarrelAI.stopAllWatchers) {
+            try { FishBarrelAI.stopAllWatchers(); } catch (e) { /* non-fatal */ }
+        }
+        // Allow Init() to run cleanly the next time capture is turned back
+        // on in this same tab — otherwise the initialised flag would
+        // short-circuit re-binding the mouseup listener and re-launching
+        // maybeScan.
+        try {
+            window.document.removeEventListener('mouseup', FishBarrel.OnMouseUp, false);
+        } catch (e) { /* listener may not be attached */ }
+        FishBarrel.initialised = false;
         sendResponse({ ok: true });
         return;
     }
