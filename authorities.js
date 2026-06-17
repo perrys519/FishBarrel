@@ -684,6 +684,20 @@ ASAAuth.AutoFillForm = function () {
 ASAAuth.TryFill = function (response) {
     var settings = response.settings || {};
 
+    // The intro step has nothing to fill — just an explanatory blurb, a hidden
+    // CSRF token and a Continue button. Auto-click it so the user lands
+    // directly on the first step with fillable fields. Subsequent Continues
+    // are left to the user so they can review what FishBarrel filled in.
+    var form = document.getElementById("form-make-a-complaint") || document.forms[0];
+    if (form && form.action && form.action.indexOf("saveComplaintStepintro") !== -1 && !ASAAuth._introClicked) {
+        var introBtn = document.getElementById("continue-button");
+        if (introBtn) {
+            ASAAuth._introClicked = true;
+            introBtn.click();
+            return;
+        }
+    }
+
     // Mark the complainant as a member of the public.
     FishBarrel.SelectRadioByValue("about_the_complaint", ASAAuth.PUBLIC_COMPLAINT_GUID);
 

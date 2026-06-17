@@ -178,13 +178,16 @@ FishBarrel.FillFirstMatch = function (candidates, value) {
 };
 
 // Set a specific radio in a radio-group to checked by value (different from
-// FillByName which would tick every radio in the group).
+// FillByName which would tick every radio in the group). Uses a real click
+// so JS frameworks see the same sequence of events a user would generate.
 FishBarrel.SelectRadioByValue = function (name, value) {
     var els = document.getElementsByName(name);
     for (var i = 0; i < els.length; i++) {
         if (els[i].type == "radio" && els[i].value == value) {
-            els[i].checked = true;
-            els[i].dispatchEvent(new Event('input', { bubbles: true }));
+            if (els[i].checked) return true; // already done, don't loop the observer
+            els[i].click();
+            // Belt-and-braces: also fire change, in case the page's JS only
+            // wired change-listeners and ignores click.
             els[i].dispatchEvent(new Event('change', { bubbles: true }));
             return true;
         }
