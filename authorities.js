@@ -647,6 +647,11 @@ ASAAuth.AutoFillForm = function () {
         return;
     }
 
+    // Diagnostic recorder: always-on for the ASA URL so the form's exact field
+    // names, ids and labels are captured in the console as the user walks
+    // through. Copy the console output back to update the autofill wiring.
+    FishBarrel.FormRecorder.init("ASA");
+
     // Heuristic submission detection: if the page now reads as a thank-you
     // page, mark the complaint as submitted and stop.
     var bodyText = (document.body && document.body.innerText) || "";

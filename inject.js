@@ -177,6 +177,200 @@ FishBarrel.FillFirstMatch = function (candidates, value) {
     return null;
 };
 
+// Diagnostic recorder used when reverse-engineering an authority's form.
+// When init() is called, every form field on the page is snapshotted to the
+// console (deduped across DOM mutations) and every user interaction is logged.
+// The console output is structured JSON so it can be pasted back verbatim and
+// fed into the autofill wiring.
+FishBarrel.FormRecorder = {
+    enabled: false,
+    snapshotCount: 0,
+    lastSnapshotSig: null,
+
+    init: function (tag) {
+        if (this.enabled) return;
+        this.enabled = true;
+        this.tag = tag || "form";
+        var self = this;
+
+        console.log("[FishBarrel] FormRecorder enabled for " + this.tag + " at " + window.location.href);
+
+        self.snapshot();
+
+        var pending = null;
+        new MutationObserver(function () {
+            if (pending) return;
+            pending = window.setTimeout(function () {
+                pending = null;
+                self.snapshot();
+            }, 200);
+        }).observe(document.body, { childList: true, subtree: true });
+
+        document.addEventListener('change', function (e) { self.logEvent('change', e); }, true);
+        document.addEventListener('input', function (e) { self.logEvent('input', e); }, true);
+        document.addEventListener('click', function (e) { self.logClick(e); }, true);
+    },
+
+    snapshot: function () {
+        var fields = [];
+        var buttons = [];
+        var nodes = document.querySelectorAll('input, select, textarea, button');
+        for (var i = 0; i < nodes.length; i++) {
+            var el = nodes[i];
+            var t = (el.type || "").toLowerCase();
+            if (el.tagName === 'BUTTON' || t === 'submit' || t === 'button' || t === 'reset') {
+                buttons.push(this.describeButton(el));
+            } else {
+                fields.push(this.describeField(el));
+            }
+        }
+        var sig = JSON.stringify(fields) + "|" + JSON.stringify(buttons);
+        if (sig === this.lastSnapshotSig) return;
+        this.lastSnapshotSig = sig;
+        this.snapshotCount++;
+
+        var form = document.forms[0];
+        var payload = {
+            tag: this.tag,
+            snapshotNumber: this.snapshotCount,
+            url: window.location.href,
+            formAction: form ? form.action : null,
+            formMethod: form ? form.method : null,
+            fields: fields,
+            buttons: buttons
+        };
+
+        console.groupCollapsed("[FishBarrel] SNAPSHOT #" + this.snapshotCount + " — " + fields.length + " fields, " + buttons.length + " buttons");
+        console.log("Copy-paste-friendly JSON:");
+        console.log(JSON.stringify(payload, null, 2));
+        console.log("Live objects (expand to inspect):", payload);
+        console.groupEnd();
+    },
+
+    describeField: function (el) {
+        var o = {
+            tag: el.tagName.toLowerCase(),
+            type: el.type || null,
+            name: el.name || null,
+            id: el.id || null,
+            label: this.labelFor(el),
+            visible: this.isVisible(el)
+        };
+        if (el.placeholder) o.placeholder = el.placeholder;
+        if (el.required || el.hasAttribute('required')) o.required = true;
+        if (el.maxLength > 0) o.maxLength = el.maxLength;
+
+        if (el.type === 'checkbox' || el.type === 'radio') {
+            o.value = el.value;
+            o.checked = el.checked;
+        } else if (el.tagName === 'SELECT') {
+            o.value = el.value;
+            o.options = [];
+            for (var i = 0; i < el.options.length; i++) {
+                o.options.push({ value: el.options[i].value, text: (el.options[i].text || "").trim() });
+            }
+        } else {
+            // For text-like fields don't leak whatever the user has already
+            // typed (privacy when copy-pasting console output) — just note
+            // whether something is in there.
+            o.hasValue = !!el.value;
+        }
+
+        // Surface any data-* attributes — ASA uses data-parent for cascading
+        // selects and data-out-of-asa-remit for branching.
+        var data = {};
+        for (var a = 0; a < el.attributes.length; a++) {
+            var attr = el.attributes[a];
+            if (attr.name.indexOf("data-") === 0) data[attr.name] = attr.value;
+        }
+        if (Object.keys(data).length > 0) o.data = data;
+
+        return o;
+    },
+
+    describeButton: function (el) {
+        return {
+            tag: el.tagName.toLowerCase(),
+            type: el.type || null,
+            id: el.id || null,
+            name: el.name || null,
+            text: ((el.innerText || el.value || "") + "").trim().substring(0, 80),
+            visible: this.isVisible(el)
+        };
+    },
+
+    labelFor: function (el) {
+        if (el.id) {
+            try {
+                var lab = document.querySelector('label[for="' + el.id.replace(/"/g, '\\"') + '"]');
+                if (lab) return (lab.innerText || "").trim().substring(0, 120);
+            } catch (e) { /* unusual id, fall through */ }
+        }
+        var p = el.parentElement;
+        var hops = 0;
+        while (p && hops < 4 && p.tagName !== 'BODY') {
+            if (p.tagName === 'LABEL') return (p.innerText || "").trim().substring(0, 120);
+            p = p.parentElement;
+            hops++;
+        }
+        if (el.getAttribute('aria-label')) return el.getAttribute('aria-label');
+        if (el.getAttribute('aria-labelledby')) {
+            var by = document.getElementById(el.getAttribute('aria-labelledby'));
+            if (by) return (by.innerText || "").trim().substring(0, 120);
+        }
+        if (el.placeholder) return "(placeholder) " + el.placeholder;
+        return null;
+    },
+
+    isVisible: function (el) {
+        if (el.disabled) return false;
+        if (el.type === 'hidden') return false;
+        var s = el.ownerDocument && el.ownerDocument.defaultView ? el.ownerDocument.defaultView.getComputedStyle(el) : null;
+        if (s && (s.display === 'none' || s.visibility === 'hidden')) return false;
+        if (!el.offsetParent && el.tagName !== 'BODY' && !(s && s.position === 'fixed')) return false;
+        return true;
+    },
+
+    logEvent: function (kind, e) {
+        var el = e.target;
+        if (!el || !el.tagName) return;
+        if (['INPUT', 'SELECT', 'TEXTAREA'].indexOf(el.tagName) === -1) return;
+        // Only log change events for selects/checkboxes/radios; otherwise the
+        // per-keystroke input events drown the console out.
+        if (kind === 'input' && el.tagName !== 'TEXTAREA') return;
+        if (kind === 'change' && (el.type === 'text' || el.type === 'email' || el.type === 'tel' || el.type === 'url' || el.type === 'password')) {
+            // Don't print the typed value — but DO log that the field was used,
+            // along with its identifiers, since that's the wiring info I need.
+            console.log("[FishBarrel] " + kind + " on field", {
+                name: el.name || null,
+                id: el.id || null,
+                label: this.labelFor(el),
+                type: el.type
+            });
+            return;
+        }
+        console.log("[FishBarrel] " + kind, {
+            name: el.name || null,
+            id: el.id || null,
+            label: this.labelFor(el),
+            type: el.type,
+            value: el.value,
+            checked: (el.type === 'checkbox' || el.type === 'radio') ? el.checked : undefined
+        });
+    },
+
+    logClick: function (e) {
+        var el = e.target && e.target.closest ? e.target.closest('button, input[type="submit"], input[type="button"], a[role="button"], [data-action]') : null;
+        if (!el) return;
+        console.log("[FishBarrel] click", {
+            tag: el.tagName.toLowerCase(),
+            id: el.id || null,
+            name: el.name || null,
+            text: ((el.innerText || el.value || "") + "").trim().substring(0, 80)
+        });
+    }
+};
+
 // Set a specific radio in a radio-group to checked by value (different from
 // FillByName which would tick every radio in the group). Uses a real click
 // so JS frameworks see the same sequence of events a user would generate.
