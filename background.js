@@ -192,38 +192,55 @@ async function spiderLoop() {
 }
 
 async function spiderVisit(url) {
-    console.log("[FishBarrel] spider visiting (" + Spider.pagesScanned + "/" + Spider.maxPages + "):", url);
+    console.log("[FishBarrel] spider VISIT (" + Spider.pagesScanned + "/" + Spider.maxPages + "):", url);
     var tab;
     try {
         tab = await chrome.tabs.create({ url: url, active: false });
+        console.log("[FishBarrel] spider opened tab", tab.id);
     } catch (e) {
         console.log("[FishBarrel] spider tabs.create failed:", e);
         return;
     }
     Spider.currentTabId = tab.id;
 
+    console.log("[FishBarrel] spider waiting for tab", tab.id, "to finish loading");
     await waitForTabComplete(tab.id);
     if (!Spider.active) return;
+    console.log("[FishBarrel] spider tab", tab.id, "load complete");
 
-    // Give the AI scan a chance to fire and report back. If it doesn't
-    // signal within 25s, move on — better to crawl more pages than to
-    // hang forever on one Wix-heavy site.
-    await waitForAiScanComplete(25000);
+    // Give the AI scan a chance to fire and report back. With the always-fire
+    // aiScanComplete signal in maybeScan this normally resolves in < 1 s for
+    // already-scanned URLs and < 10 s for fresh ones. The 25 s timeout is a
+    // safety net for pages where the content script never reports back.
+    var reason = await waitForAiScanComplete(25000);
     if (!Spider.active) return;
+    console.log("[FishBarrel] spider tab", tab.id, "scan wait resolved via:", reason);
 
     var links = await harvestLinksFromTab(tab.id);
     var added = 0;
+    var sameHostCount = 0;
+    var alreadyVisitedCount = 0;
+    var alreadyQueuedCount = 0;
+    var assetCount = 0;
     for (var i = 0; i < links.length; i++) {
         var n = normaliseSpiderUrl(links[i]);
         if (!n) continue;
         if (!sameHost(n, Spider.rootHost)) continue;
-        if (!looksLikePageUrl(n)) continue;
-        if (Spider.visited[n]) continue;
-        if (Spider.queue.indexOf(n) !== -1) continue;
+        sameHostCount++;
+        if (!looksLikePageUrl(n)) { assetCount++; continue; }
+        if (Spider.visited[n]) { alreadyVisitedCount++; continue; }
+        if (Spider.queue.indexOf(n) !== -1) { alreadyQueuedCount++; continue; }
         Spider.queue.push(n);
         added++;
     }
-    console.log("[FishBarrel] spider harvested", links.length, "links from", url + "; queued", added, "new same-host URLs");
+    console.log("[FishBarrel] spider link harvest from tab", tab.id + ":",
+        "raw=" + links.length,
+        "sameHost=" + sameHostCount,
+        "queuedNew=" + added,
+        "alreadyVisited=" + alreadyVisitedCount,
+        "alreadyQueued=" + alreadyQueuedCount,
+        "skippedAssets=" + assetCount,
+        "queueLen=" + Spider.queue.length);
 
     if (Spider.currentTabId === tab.id) {
         Spider.currentTabId = null;
@@ -426,10 +443,16 @@ async function handleMessage(request, sender) {
             return { ok: true };
 
         case "aiScanComplete": {
-            // The content script signals this at the end of every successful
-            // performScan. The spider uses it as a hand-off cue to harvest
-            // links and move to the next URL.
-            if (Spider.active && Spider.pendingResolve) {
+            // maybeScan fires this once per page load. The spider uses it as
+            // the hand-off cue to harvest links and move on. We only resolve
+            // when the message comes from the spider's current tab —
+            // otherwise a rescan in some other tab would prematurely advance
+            // the crawl.
+            var fromSpiderTab = sender && sender.tab && Spider.currentTabId
+                && sender.tab.id === Spider.currentTabId;
+            if (Spider.active && Spider.pendingResolve && request.initial && fromSpiderTab) {
+                console.log("[FishBarrel] spider got aiScanComplete from tab", sender.tab.id,
+                    "(alreadyScanned:", request.alreadyScanned + ", skipped:", request.skipped + ")");
                 if (Spider.pendingTimeout) clearTimeout(Spider.pendingTimeout);
                 var resolve = Spider.pendingResolve;
                 Spider.pendingResolve = null;

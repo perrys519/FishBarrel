@@ -383,28 +383,44 @@ var FishBarrelAI = (function () {
     }
 
     // Entry point called from FishBarrel.Init(). Runs the first scan (gated by
-    // the URL-dedup set) and then installs the dynamic-content watcher.
+    // the URL-dedup set) and then installs the dynamic-content watcher. ALWAYS
+    // fires aiScanComplete at the end so the site spider can move on whether
+    // we actually ran a scan, skipped because the URL was already done, or
+    // bailed because the page had no text.
     async function maybeScan(url, sourceText) {
         console.log("[FishBarrelAI] maybeScan called for", url, "(" + (sourceText || "").length + " chars)");
+        var skipped = false;
+        var alreadyScanned = false;
         try {
             if (!sourceText || sourceText.length < 50) {
                 console.log("[FishBarrelAI] skipping: source text too short");
-                return;
-            }
-
-            if (await hasAiScannedUrl(url)) {
+                skipped = true;
+            } else if (await hasAiScannedUrl(url)) {
                 console.log("[FishBarrelAI] skipping initial scan: URL already scanned this session — call FishBarrelAI.clearScannedUrls() in this console to reset");
-                // Don't return — still install the watcher for SPA / carousel
-                // updates the user might trigger after revisiting.
+                alreadyScanned = true;
+                watchForDynamicContent(url, sourceText);
             } else {
                 markAiScannedUrl(url);
                 await performScan(url, sourceText, /*isRescan=*/false);
+                watchForDynamicContent(url, sourceText);
             }
-
-            watchForDynamicContent(url, sourceText);
         } catch (e) {
             console.log("[FishBarrelAI] maybeScan FAILED:", e);
         }
+
+        // Hand-off signal for the site spider. Fires for every page the
+        // content script processes, regardless of whether we actually called
+        // the model — so the spider doesn't sit on a 25 s timeout when the
+        // URL was already in the dedup set or the page had no text.
+        try {
+            chrome.runtime.sendMessage({
+                type: "aiScanComplete",
+                url: url,
+                initial: true,
+                skipped: skipped,
+                alreadyScanned: alreadyScanned
+            }, function () { void chrome.runtime.lastError; });
+        } catch (e) { /* messaging failures shouldn't break content script */ }
     }
 
     // Core scan logic. Called by maybeScan for the initial pass and by the
@@ -539,19 +555,6 @@ var FishBarrelAI = (function () {
             console.log("[FishBarrelAI]" + (isRescan ? " rescan" : ""), "done — emitted", emitted, "new,", deduped, "deduped,", dropped - deduped, "filtered, total in complaint:", total, "URL:", url);
 
             showScanToast(emitted, total, !!isRescan);
-
-            // Hand-off signal for the site spider. Sent on every scan
-            // completion so the spider knows it can harvest links and
-            // move to the next URL.
-            try {
-                chrome.runtime.sendMessage({
-                    type: "aiScanComplete",
-                    url: url,
-                    emitted: emitted,
-                    isRescan: !!isRescan
-                }, function () { void chrome.runtime.lastError; });
-            } catch (e) { /* messaging failures shouldn't break scanning */ }
-
             return emitted;
         } catch (e) {
             console.log("[FishBarrelAI] performScan FAILED:", e);
