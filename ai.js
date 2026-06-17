@@ -12,7 +12,11 @@
 
 var FishBarrelAI = (function () {
     var DEFAULT_PROMPT_TEMPLATE = [
-        'You are a strict compliance auditor. Analyze the "Source Text" below to find violations of {REGULATOR}: quotes that claim a health, medical or psychological treatment is effective for a specific condition without robust scientific evidence. Examples of WHAT TO FLAG:',
+        'You are a strict compliance auditor. Two tasks on the "Source Text" below.',
+        '',
+        'TASK A — Identify the practitioner, business, clinic or organisation this page belongs to. Look at headings, the page title, contact details and signatures. Return the name as `organisation_name`. If you genuinely cannot tell, return an empty string. Examples: "Dr Victoria Karney", "Sheffield Homeopathy", "Quantum Holistic Healing Ltd".',
+        '',
+        'TASK B — Find violations of {REGULATOR}: quotes that claim a health, medical or psychological treatment is effective for a specific condition without robust scientific evidence. Examples of WHAT TO FLAG:',
         '  - "Homeopathy can cure your arthritis."',
         '  - "Helped my child with severe anger problems."',
         '  - "This treatment rebalances the body and restores health."',
@@ -45,6 +49,7 @@ var FishBarrelAI = (function () {
     var VIOLATIONS_SCHEMA = {
         type: "object",
         properties: {
+            organisation_name: { type: "string" },
             violations: {
                 type: "array",
                 items: {
@@ -58,7 +63,7 @@ var FishBarrelAI = (function () {
                 }
             }
         },
-        required: ["violations"]
+        required: ["organisation_name", "violations"]
     };
 
     // Belt-and-braces filter on the model's reason text. When Nano can't find
@@ -247,19 +252,86 @@ var FishBarrelAI = (function () {
     }
 
     function emitClaim(url, quote, reason) {
-        chrome.runtime.sendMessage({
-            type: "addClaim",
-            selectedText: quote,
-            url: url,
-            textRangeToStringFormatText: quote,
-            instanceSelected: 1,
-            backgroundInfo: reason || ""
-        }, function (response) {
-            void chrome.runtime.lastError;
-            if (response && typeof FishBarrel !== "undefined" && FishBarrel.HighlightText) {
-                try { FishBarrel.HighlightText(response); } catch (e) { /* highlight failure is non-fatal */ }
-            }
+        return new Promise(function (resolve) {
+            chrome.runtime.sendMessage({
+                type: "addClaim",
+                selectedText: quote,
+                url: url,
+                textRangeToStringFormatText: quote,
+                instanceSelected: 1,
+                backgroundInfo: reason || ""
+            }, function (response) {
+                void chrome.runtime.lastError;
+                if (response && typeof FishBarrel !== "undefined" && FishBarrel.HighlightText) {
+                    try { FishBarrel.HighlightText(response); } catch (e) { /* highlight failure is non-fatal */ }
+                }
+                resolve(response || null);
+            });
         });
+    }
+
+    function getTotalClaims() {
+        return new Promise(function (resolve) {
+            chrome.runtime.sendMessage({ type: "getState" }, function (state) {
+                void chrome.runtime.lastError;
+                var total = (state && state.claimGroup && state.claimGroup.claims) ? state.claimGroup.claims.length : 0;
+                resolve(total);
+            });
+        });
+    }
+
+    // Fixed-position toast in the page reporting scan results. Auto-dismisses
+    // after a few seconds. Uses the brand yellow so users recognise it as
+    // FishBarrel rather than confusing it with the page's own UI.
+    function showScanToast(pageCount, totalCount) {
+        try {
+            if (!document.body) return;
+            var existing = document.getElementById("__FishBarrelAIToast__");
+            if (existing) existing.remove();
+
+            var msg;
+            if (pageCount === 0) {
+                msg = "FishBarrel: AI scan complete — no new claims found on this page. " + totalCount + " total in this complaint.";
+            } else if (pageCount === 1) {
+                msg = "FishBarrel: AI scan complete — 1 claim found on this page. " + totalCount + " total in this complaint.";
+            } else {
+                msg = "FishBarrel: AI scan complete — " + pageCount + " claims found on this page. " + totalCount + " total in this complaint.";
+            }
+
+            var t = document.createElement("div");
+            t.id = "__FishBarrelAIToast__";
+            t.setAttribute("style", [
+                "all: initial",
+                "position: fixed",
+                "top: 16px",
+                "right: 16px",
+                "z-index: 2147483647",
+                "background: #FFF5D6",
+                "color: #1F2937",
+                "font: 14px/1.4 -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif",
+                "padding: 12px 16px",
+                "border-radius: 10px",
+                "box-shadow: 0 6px 20px rgba(15, 23, 42, 0.22)",
+                "border: 1px solid #F4B400",
+                "max-width: 340px",
+                "opacity: 0",
+                "transition: opacity 250ms ease"
+            ].join("; ") + ";");
+            t.textContent = msg;
+            document.body.appendChild(t);
+            // next frame so the transition fires
+            requestAnimationFrame(function () { t.style.opacity = "1"; });
+
+            window.setTimeout(function () {
+                t.style.opacity = "0";
+                window.setTimeout(function () {
+                    if (t && t.parentNode) t.parentNode.removeChild(t);
+                }, 350);
+            }, pageCount === 0 ? 3000 : 5000);
+        } catch (e) {
+            // If the page blocks DOM injection, fall back to console only.
+            console.log("[FishBarrelAI] could not show toast:", e);
+        }
     }
 
     async function maybeScan(url, sourceText) {
@@ -314,6 +386,7 @@ var FishBarrelAI = (function () {
             }
 
             var allViolations = [];
+            var firstOrgName = "";
             for (var i = 0; i < chunks.length; i++) {
                 var prompt = buildPrompt(template, regulator, chunks[i]);
                 console.log("[FishBarrelAI] chunk " + (i + 1) + "/" + chunks.length + " prompt (" + prompt.length + " chars, first 400):", prompt.substring(0, 400) + (prompt.length > 400 ? "…" : ""));
@@ -323,20 +396,22 @@ var FishBarrelAI = (function () {
                         console.log("[FishBarrelAI] chunk " + (i + 1) + " context cost:", cost, "/", session.contextWindow);
                     }
                 } catch (e) { /* measure is optional */ }
-                var violations = await runPromptForChunkVerbose(session, prompt, i + 1);
-                allViolations = allViolations.concat(violations || []);
+                var result = await runPromptForChunkVerbose(session, prompt, i + 1);
+                if (!firstOrgName && result.organisationName) firstOrgName = result.organisationName;
+                allViolations = allViolations.concat(result.violations || []);
             }
             try { session.destroy(); } catch (e) { /* ignore */ }
 
-            console.log("[FishBarrelAI] total violations from model:", allViolations.length);
-            if (allViolations.length === 0) {
-                console.log("[FishBarrelAI] model returned no violations for this page. URL stays marked so we don't loop — call FishBarrelAI.clearScannedUrls() to retry.");
-                return;
+            if (firstOrgName) {
+                setOrgNameIfEmpty(firstOrgName);
             }
+
+            console.log("[FishBarrelAI] total violations from model:", allViolations.length);
 
             var emitted = 0;
             var dropped = 0;
             var seenQuotes = {};
+            var emitPromises = [];
             for (var v = 0; v < allViolations.length; v++) {
                 var violation = allViolations[v];
                 if (!violation || !violation.quote) {
@@ -374,17 +449,25 @@ var FishBarrelAI = (function () {
                 }
                 seenQuotes[actual.toLowerCase()] = true;
                 console.log("[FishBarrelAI] violation #" + (v + 1) + " ACCEPTED:", JSON.stringify(actual.substring(0, 80)) + (actual.length > 80 ? "…" : ""));
-                emitClaim(url, actual, violation.reason);
+                emitPromises.push(emitClaim(url, actual, violation.reason));
                 emitted++;
             }
 
-            console.log("[FishBarrelAI] done — emitted", emitted, "claim(s),", dropped, "dropped, for", url);
+            // Wait for every addClaim to land so the total count below is
+            // accurate. emitClaim resolves with the background's response.
+            await Promise.all(emitPromises);
+
+            var total = await getTotalClaims();
+            console.log("[FishBarrelAI] done — emitted", emitted, "claim(s),", dropped, "dropped, total in complaint:", total, "URL:", url);
+
+            showScanToast(emitted, total);
         } catch (e) {
             console.log("[FishBarrelAI] maybeScan FAILED:", e);
         }
     }
 
     // Verbose variant of runPromptForChunk — logs raw response for debugging.
+    // Returns { organisationName, violations }.
     async function runPromptForChunkVerbose(session, prompt, chunkIndex) {
         try {
             var raw = await session.prompt(prompt, {
@@ -400,16 +483,31 @@ var FishBarrelAI = (function () {
                 console.log("[FishBarrelAI] chunk " + chunkIndex + " raw didn't parse; trying cleaned:", cleaned.substring(0, 200));
                 parsed = JSON.parse(cleaned);
             }
-            if (parsed && Array.isArray(parsed.violations)) {
-                console.log("[FishBarrelAI] chunk " + chunkIndex + " parsed", parsed.violations.length, "violation(s)");
-                return parsed.violations;
-            }
-            console.log("[FishBarrelAI] chunk " + chunkIndex + " parsed but no violations array:", parsed);
-            return [];
+            var orgName = (parsed && typeof parsed.organisation_name === "string") ? parsed.organisation_name.trim() : "";
+            var violations = (parsed && Array.isArray(parsed.violations)) ? parsed.violations : [];
+            console.log("[FishBarrelAI] chunk " + chunkIndex + " parsed", violations.length, "violation(s); org name:", JSON.stringify(orgName));
+            return { organisationName: orgName, violations: violations };
         } catch (e) {
             console.log("[FishBarrelAI] chunk " + chunkIndex + " prompt FAILED:", e);
-            return [];
+            return { organisationName: "", violations: [] };
         }
+    }
+
+    // Fire-and-forget message to the background to set the current claim
+    // group's company name IF it isn't already populated. Background will
+    // ignore the message when the name is already set (so first wins, and
+    // user edits in Review aren't overwritten).
+    function setOrgNameIfEmpty(name) {
+        if (!name || name.length < 3) return;
+        var generic = /^(?:unknown|n\/?a|not (?:specified|sure|stated|provided)|none|the (?:business|company|organisation|practitioner))$/i;
+        if (generic.test(name.trim())) {
+            console.log("[FishBarrelAI] skipping generic org name:", JSON.stringify(name));
+            return;
+        }
+        console.log("[FishBarrelAI] sending org name to background (will only apply if empty):", JSON.stringify(name));
+        chrome.runtime.sendMessage({ type: "setOrgNameIfEmpty", name: name }, function () {
+            void chrome.runtime.lastError;
+        });
     }
 
     // Console-callable helper to flush the per-session dedup set so the user

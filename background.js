@@ -295,6 +295,20 @@ async function handleMessage(request, sender) {
             persistState();
             return { ok: true };
 
+        case "setOrgNameIfEmpty": {
+            // The AI scanner identifies the practitioner/business on each
+            // page. We set the claim group's company name on the first
+            // non-empty answer; later pages don't overwrite, and user edits
+            // in Review (via updateOrgName) take precedence.
+            if (!ClaimGroup.Current) ClaimGroup.Current = new ClaimGroup();
+            if (!ClaimGroup.Current._CompanyName && request.name) {
+                ClaimGroup.Current._CompanyName = String(request.name).trim();
+                console.log("[FishBarrel] org name set from AI:", ClaimGroup.Current._CompanyName);
+                persistState();
+            }
+            return { ok: true };
+        }
+
         case "getSettings": {
             return await FBStorage.getLocal(null);
         }
