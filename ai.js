@@ -539,6 +539,19 @@ var FishBarrelAI = (function () {
             console.log("[FishBarrelAI]" + (isRescan ? " rescan" : ""), "done — emitted", emitted, "new,", deduped, "deduped,", dropped - deduped, "filtered, total in complaint:", total, "URL:", url);
 
             showScanToast(emitted, total, !!isRescan);
+
+            // Hand-off signal for the site spider. Sent on every scan
+            // completion so the spider knows it can harvest links and
+            // move to the next URL.
+            try {
+                chrome.runtime.sendMessage({
+                    type: "aiScanComplete",
+                    url: url,
+                    emitted: emitted,
+                    isRescan: !!isRescan
+                }, function () { void chrome.runtime.lastError; });
+            } catch (e) { /* messaging failures shouldn't break scanning */ }
+
             return emitted;
         } catch (e) {
             console.log("[FishBarrelAI] performScan FAILED:", e);

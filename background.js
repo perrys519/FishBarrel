@@ -23,6 +23,214 @@ var stateReady = restoreState();
 // Init / ClearCapture so a fresh round re-scans everything.
 var AiScannedUrls = {};
 
+// Site spider state. Holds the BFS queue, visited set, and current background
+// tab while a crawl is in progress. Cleared on Init / ClearCapture and on
+// spiderStop. Only one spider runs at a time.
+var Spider = {
+    active: false,
+    rootHost: null,
+    queue: [],
+    visited: {},
+    maxPages: 50,
+    pagesScanned: 0,
+    claimsAtStart: 0,
+    currentTabId: null,
+    pendingResolve: null,
+    pendingTimeout: null
+};
+
+function canonicalHost(url) {
+    try {
+        return new URL(url).hostname.toLowerCase().replace(/^www\./, "");
+    } catch (e) {
+        return null;
+    }
+}
+
+function sameHost(url, refHost) {
+    var h = canonicalHost(url);
+    if (!h || !refHost) return false;
+    if (h === refHost) return true;
+    if (h.endsWith("." + refHost)) return true;
+    if (refHost.endsWith("." + h)) return true;
+    return false;
+}
+
+function normaliseSpiderUrl(rawUrl) {
+    try {
+        var u = new URL(rawUrl);
+        if (!/^https?:$/i.test(u.protocol)) return null;
+        u.hash = "";
+        // Strip trailing slash for a stable visited-set key.
+        var s = u.href;
+        if (s.endsWith("/")) s = s.slice(0, -1);
+        return s;
+    } catch (e) {
+        return null;
+    }
+}
+
+function looksLikePageUrl(url) {
+    try {
+        var u = new URL(url);
+        var path = (u.pathname || "").toLowerCase();
+        // Skip common non-HTML asset extensions.
+        if (/\.(pdf|png|jpe?g|gif|webp|svg|ico|css|js|zip|mp[34]|mov|avi|woff2?|ttf|eot|xml|rss|atom)(?:$|\?)/.test(path)) return false;
+        return true;
+    } catch (e) {
+        return false;
+    }
+}
+
+function waitForTabComplete(tabId) {
+    return new Promise(function (resolve) {
+        var done = false;
+        function finish() {
+            if (done) return;
+            done = true;
+            chrome.tabs.onUpdated.removeListener(listener);
+            chrome.tabs.onRemoved.removeListener(removedListener);
+            resolve();
+        }
+        function listener(updatedTabId, changeInfo) {
+            if (updatedTabId === tabId && changeInfo.status === "complete") finish();
+        }
+        function removedListener(removedTabId) {
+            if (removedTabId === tabId) finish();
+        }
+        chrome.tabs.onUpdated.addListener(listener);
+        chrome.tabs.onRemoved.addListener(removedListener);
+        // Safety: 30s hard cap even if Chrome never fires complete.
+        setTimeout(finish, 30000);
+    });
+}
+
+function waitForAiScanComplete(maxMs) {
+    return new Promise(function (resolve) {
+        Spider.pendingResolve = resolve;
+        Spider.pendingTimeout = setTimeout(function () {
+            Spider.pendingResolve = null;
+            Spider.pendingTimeout = null;
+            resolve("timeout");
+        }, maxMs);
+    });
+}
+
+function harvestLinksFromTab(tabId) {
+    return new Promise(function (resolve) {
+        chrome.tabs.sendMessage(tabId, { type: "harvestLinks" }, function (response) {
+            void chrome.runtime.lastError;
+            resolve((response && response.links) || []);
+        });
+    });
+}
+
+async function spiderStart(rootUrl) {
+    if (Spider.active) return { error: "already-running" };
+    var normalised = normaliseSpiderUrl(rootUrl);
+    if (!normalised) return { error: "bad-url" };
+    if (!looksLikePageUrl(normalised)) return { error: "not-a-page" };
+
+    // Auto-enable Capture mode if it isn't on. Spidering without capture
+    // would just open and close tabs to no effect.
+    if (!ClaimGroup.IsCollecting) {
+        await Init();
+    }
+
+    Spider.active = true;
+    Spider.rootHost = canonicalHost(normalised);
+    Spider.queue = [normalised];
+    Spider.visited = {};
+    Spider.pagesScanned = 0;
+    Spider.claimsAtStart = (ClaimGroup.Current && ClaimGroup.Current.claims) ? ClaimGroup.Current.claims.length : 0;
+
+    console.log("[FishBarrel] spider starting from", normalised, "(host:", Spider.rootHost + ", max:", Spider.maxPages + " pages)");
+
+    // Run async — don't make spiderStart's caller wait for the whole crawl.
+    spiderLoop();
+
+    return { ok: true, rootHost: Spider.rootHost, maxPages: Spider.maxPages };
+}
+
+function spiderStop() {
+    if (!Spider.active) return;
+    Spider.active = false;
+
+    if (Spider.pendingTimeout) clearTimeout(Spider.pendingTimeout);
+    if (Spider.pendingResolve) {
+        var resolve = Spider.pendingResolve;
+        Spider.pendingResolve = null;
+        Spider.pendingTimeout = null;
+        resolve("stopped");
+    }
+
+    if (Spider.currentTabId) {
+        var tabId = Spider.currentTabId;
+        Spider.currentTabId = null;
+        chrome.tabs.remove(tabId, function () { void chrome.runtime.lastError; });
+    }
+
+    var totalClaims = (ClaimGroup.Current && ClaimGroup.Current.claims) ? ClaimGroup.Current.claims.length : 0;
+    var added = totalClaims - Spider.claimsAtStart;
+    console.log("[FishBarrel] spider stopped — pages scanned:", Spider.pagesScanned + ", claims added during crawl:", added + ", total claims:", totalClaims);
+}
+
+async function spiderLoop() {
+    while (Spider.active && Spider.queue.length > 0 && Spider.pagesScanned < Spider.maxPages) {
+        var url = Spider.queue.shift();
+        if (!url || Spider.visited[url]) continue;
+        Spider.visited[url] = true;
+        Spider.pagesScanned++;
+
+        try {
+            await spiderVisit(url);
+        } catch (e) {
+            console.log("[FishBarrel] spider error on", url, e);
+        }
+    }
+    spiderStop();
+}
+
+async function spiderVisit(url) {
+    console.log("[FishBarrel] spider visiting (" + Spider.pagesScanned + "/" + Spider.maxPages + "):", url);
+    var tab;
+    try {
+        tab = await chrome.tabs.create({ url: url, active: false });
+    } catch (e) {
+        console.log("[FishBarrel] spider tabs.create failed:", e);
+        return;
+    }
+    Spider.currentTabId = tab.id;
+
+    await waitForTabComplete(tab.id);
+    if (!Spider.active) return;
+
+    // Give the AI scan a chance to fire and report back. If it doesn't
+    // signal within 25s, move on — better to crawl more pages than to
+    // hang forever on one Wix-heavy site.
+    await waitForAiScanComplete(25000);
+    if (!Spider.active) return;
+
+    var links = await harvestLinksFromTab(tab.id);
+    var added = 0;
+    for (var i = 0; i < links.length; i++) {
+        var n = normaliseSpiderUrl(links[i]);
+        if (!n) continue;
+        if (!sameHost(n, Spider.rootHost)) continue;
+        if (!looksLikePageUrl(n)) continue;
+        if (Spider.visited[n]) continue;
+        if (Spider.queue.indexOf(n) !== -1) continue;
+        Spider.queue.push(n);
+        added++;
+    }
+    console.log("[FishBarrel] spider harvested", links.length, "links from", url + "; queued", added, "new same-host URLs");
+
+    if (Spider.currentTabId === tab.id) {
+        Spider.currentTabId = null;
+        chrome.tabs.remove(tab.id, function () { void chrome.runtime.lastError; });
+    }
+}
+
 async function restoreState() {
     var stored = await new Promise(function (resolve) {
         chrome.storage.session.get(["claimGroup", "isCollecting", "currentComplaint", "aiScannedUrls"], function (items) {
@@ -88,6 +296,10 @@ function PauseCapture() {
 }
 
 async function EndCapture() {
+    // Stop any in-progress spider FIRST so it doesn't open more tabs after
+    // capture has been turned off.
+    if (Spider.active) spiderStop();
+
     ClaimGroup.IsCollecting = false;
     updateIcon();
     persistState();
@@ -195,8 +407,36 @@ async function handleMessage(request, sender) {
                 groupExists: GroupExists(),
                 statusText: GetStatusText(),
                 claimGroup: ClaimGroup.Current,
-                currentUrl: ClaimGroup.Current ? ClaimGroup.Current.WebsiteUrl() : ""
+                currentUrl: ClaimGroup.Current ? ClaimGroup.Current.WebsiteUrl() : "",
+                spider: Spider.active ? {
+                    active: true,
+                    rootHost: Spider.rootHost,
+                    pagesScanned: Spider.pagesScanned,
+                    maxPages: Spider.maxPages,
+                    queueRemaining: Spider.queue.length
+                } : { active: false }
             };
+        }
+
+        case "spiderStart":
+            return await spiderStart(request.url);
+
+        case "spiderStop":
+            spiderStop();
+            return { ok: true };
+
+        case "aiScanComplete": {
+            // The content script signals this at the end of every successful
+            // performScan. The spider uses it as a hand-off cue to harvest
+            // links and move to the next URL.
+            if (Spider.active && Spider.pendingResolve) {
+                if (Spider.pendingTimeout) clearTimeout(Spider.pendingTimeout);
+                var resolve = Spider.pendingResolve;
+                Spider.pendingResolve = null;
+                Spider.pendingTimeout = null;
+                resolve("scan-complete");
+            }
+            return { ok: true };
         }
         case "init":          await Init(); return { ok: true };
         case "resume":        await Resume(); return { ok: true };

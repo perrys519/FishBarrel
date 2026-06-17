@@ -509,8 +509,34 @@ FishBarrel.ComplaintSent = function (authority) {
     chrome.runtime.sendMessage({ type: "complaintSent", Authority: authority });
 };
 
-// Listen for unhighlight requests from the service worker.
+// Listen for service-worker messages directed at this content script.
 chrome.runtime.onMessage.addListener(function (request, sender, sendResponse) {
+    if (request && request.type == "harvestLinks") {
+        // Spider asks for all the page's links so it can queue same-host URLs.
+        // We return the absolute href; the spider handles same-host filtering
+        // and visited-set dedup.
+        var links = [];
+        var seen = {};
+        try {
+            var anchors = document.querySelectorAll('a[href]');
+            for (var i = 0; i < anchors.length; i++) {
+                var a = anchors[i];
+                var href = a.href || "";
+                if (!href || !/^https?:/i.test(href)) continue;
+                try {
+                    var u = new URL(href);
+                    u.hash = "";
+                    var n = u.href;
+                    if (seen[n]) continue;
+                    seen[n] = true;
+                    links.push(n);
+                } catch (e) { /* malformed href, skip */ }
+            }
+        } catch (e) { /* DOM access failed, return what we have */ }
+        sendResponse({ links: links });
+        return;
+    }
+
     if (request && request.type == "unhighlightAll") {
         FishBarrel.UnhighlightAll();
         // Capture is being turned off — tear down the AI MutationObserver
