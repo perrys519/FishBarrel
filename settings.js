@@ -204,8 +204,109 @@ async function ResetTemplate(templateType) {
     GeneratePreviews();
 }
 
-document.addEventListener('DOMContentLoaded', function () {
-    Init();
+// ----- AI auto-detect card ---------------------------------------------------
+
+async function refreshAiStatus() {
+    var pill = document.getElementById("aiStatusPill");
+    var dlBtn = document.getElementById("aiDownload");
+    var help = document.getElementById("aiUnavailableHelp");
+    if (!pill) return;
+
+    pill.className = "fb-status-pill";
+    pill.innerText = "Checking…";
+    dlBtn.style.display = "none";
+    help.style.display = "none";
+
+    if (typeof LanguageModel === "undefined") {
+        pill.classList.add("fb-ai-unavailable");
+        pill.innerText = "Unavailable";
+        help.style.display = "block";
+        return;
+    }
+
+    var status;
+    try {
+        status = await LanguageModel.availability({
+            expectedInputs: [{ type: "text", languages: ["en"] }],
+            expectedOutputs: [{ type: "text", languages: ["en"] }]
+        });
+    } catch (e) {
+        status = "unavailable";
+    }
+
+    if (status === "available") {
+        pill.classList.add("fb-ai-ready");
+        pill.innerText = "Ready";
+    } else if (status === "downloadable") {
+        pill.classList.add("fb-ai-downloadable");
+        pill.innerText = "Downloadable";
+        dlBtn.style.display = "inline-block";
+    } else if (status === "downloading") {
+        pill.classList.add("fb-ai-downloading");
+        pill.innerText = "Downloading…";
+    } else {
+        pill.classList.add("fb-ai-unavailable");
+        pill.innerText = "Unavailable";
+        help.style.display = "block";
+    }
+}
+
+async function triggerModelDownload() {
+    if (typeof LanguageModel === "undefined") return;
+    var pill = document.getElementById("aiStatusPill");
+    pill.className = "fb-status-pill fb-ai-downloading";
+    pill.innerText = "Downloading…";
+    try {
+        var session = await LanguageModel.create({
+            expectedInputs: [{ type: "text", languages: ["en"] }],
+            expectedOutputs: [{ type: "text", languages: ["en"] }],
+            monitor: function (m) {
+                m.addEventListener("downloadprogress", function (e) {
+                    var pct = Math.round((e.loaded || 0) * 100);
+                    pill.innerText = "Downloading… " + pct + "%";
+                });
+            }
+        });
+        try { session.destroy(); } catch (e) { /* ignore */ }
+    } catch (e) {
+        console.log("[FishBarrel] model download failed:", e);
+    }
+    refreshAiStatus();
+}
+
+function applyDefaultPromptIfEmpty() {
+    var ta = document.getElementById("aiPromptTemplate");
+    if (!ta) return;
+    if (!ta.value && typeof FishBarrelAI !== "undefined") {
+        ta.value = FishBarrelAI.DEFAULT_PROMPT_TEMPLATE;
+    }
+}
+
+async function initAiCard() {
+    applyDefaultPromptIfEmpty();
+    refreshAiStatus();
+
+    document.getElementById("aiCheckStatus").addEventListener("click", function (e) {
+        e.preventDefault();
+        refreshAiStatus();
+    });
+    document.getElementById("aiDownload").addEventListener("click", function (e) {
+        e.preventDefault();
+        triggerModelDownload();
+    });
+    document.getElementById("aiResetTemplate").addEventListener("click", async function (e) {
+        e.preventDefault();
+        if (typeof FishBarrelAI === "undefined") return;
+        var ta = document.getElementById("aiPromptTemplate");
+        ta.value = FishBarrelAI.DEFAULT_PROMPT_TEMPLATE;
+        SettingsCache["aiPromptTemplate"] = ta.value;
+        await FBStorage.setLocal({ aiPromptTemplate: ta.value });
+    });
+}
+
+document.addEventListener('DOMContentLoaded', async function () {
+    await Init();
+    initAiCard();
     document.getElementById("btnClearLocalStorage").addEventListener('click', async function () {
         if (confirm('Are you sure? This will delete all of your settings and reset your templates.')) {
             await FBStorage.clearLocal();

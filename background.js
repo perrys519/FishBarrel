@@ -19,15 +19,20 @@ function NewComplaint() {
 
 var stateReady = restoreState();
 
+// URLs the AI scanner has already processed this capture session. Cleared on
+// Init / ClearCapture so a fresh round re-scans everything.
+var AiScannedUrls = {};
+
 async function restoreState() {
     var stored = await new Promise(function (resolve) {
-        chrome.storage.session.get(["claimGroup", "isCollecting", "currentComplaint"], function (items) {
+        chrome.storage.session.get(["claimGroup", "isCollecting", "currentComplaint", "aiScannedUrls"], function (items) {
             resolve(items || {});
         });
     });
     ClaimGroup.Current = ClaimGroup.Rehydrate(stored.claimGroup);
     ClaimGroup.IsCollecting = !!stored.isCollecting;
     if (stored.currentComplaint) CurrentComplaint = stored.currentComplaint;
+    AiScannedUrls = stored.aiScannedUrls || {};
     updateIcon();
     // Ensure storage has a sensible Country default for fresh installs.
     var localDefaults = await FBStorage.getLocal(["Country"]);
@@ -40,7 +45,8 @@ function persistState() {
     var snapshot = {
         claimGroup: ClaimGroup.Current,
         isCollecting: ClaimGroup.IsCollecting,
-        currentComplaint: CurrentComplaint
+        currentComplaint: CurrentComplaint,
+        aiScannedUrls: AiScannedUrls
     };
     chrome.storage.session.set(snapshot);
 }
@@ -53,6 +59,7 @@ function updateIcon() {
 
 async function Init() {
     ClaimGroup.Current = new ClaimGroup();
+    AiScannedUrls = {};
     await Resume();
 }
 
@@ -105,6 +112,7 @@ function ClearCapture() {
     EndCapture();
     ClaimGroup.Current = new ClaimGroup();
     CurrentComplaint = NewComplaint();
+    AiScannedUrls = {};
     persistState();
 }
 
@@ -252,12 +260,15 @@ async function handleMessage(request, sender) {
         case "addClaim": {
             if (!ClaimGroup.IsCollecting) return { ok: false };
             if (!ClaimGroup.Current) ClaimGroup.Current = new ClaimGroup();
+            // request.backgroundInfo is set by the AI scanner with the LLM's
+            // per-claim reasoning. The manual OnMouseUp flow doesn't pass it,
+            // so it defaults to "" — the user fills it in on the review page.
             ClaimGroup.Current.AddClaim(
                 request.selectedText,
                 request.url,
                 request.textRangeToStringFormatText,
                 request.instanceSelected,
-                "",
+                request.backgroundInfo || "",
                 request.id || null,
                 false
             );
@@ -269,6 +280,18 @@ async function handleMessage(request, sender) {
                 claimIndex: ClaimGroup.Current.claims.length - 1,
                 id: claim.id
             };
+        }
+
+        case "hasAiScannedUrl":
+            return { scanned: !!AiScannedUrls[request.url] };
+
+        case "markAiScannedUrl":
+            AiScannedUrls[request.url] = true;
+            persistState();
+            return { ok: true };
+
+        case "getSettings": {
+            return await FBStorage.getLocal(null);
         }
 
         case "getNextClaimForUrl": {

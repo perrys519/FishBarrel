@@ -19,6 +19,18 @@ FishBarrel.Init = function () {
 
     window.document.addEventListener('mouseup', FishBarrel.OnMouseUp, false);
     FishBarrel.HighlightExistingText();
+
+    // Fire-and-forget background AI scan of the current page, gated on the
+    // user having AI enabled in Settings and the model being ready. Per-URL
+    // dedup lives in the service worker so SPA navigations and revisits don't
+    // re-scan the same page in one capture session.
+    if (typeof FishBarrelAI !== "undefined" && document.body) {
+        try {
+            FishBarrelAI.maybeScan(window.location.href, document.body.innerText || "");
+        } catch (e) {
+            // Scanner errors are non-fatal — manual capture keeps working.
+        }
+    }
 };
 
 FishBarrel.Kill = function (element) {

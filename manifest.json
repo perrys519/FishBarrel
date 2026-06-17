@@ -19,7 +19,7 @@
     {
       "all_frames": true,
       "css": ["injectStyle.css"],
-      "js": ["authorities.js", "inject.js"],
+      "js": ["authorities.js", "ai.js", "inject.js"],
       "matches": ["http://*/*", "https://*/*"]
     }
   ],

@@ -6,6 +6,7 @@
   <link rel="stylesheet" href="style.css" type="text/css" />
   <script src="authorities.js"></script>
   <script src="include.js"></script>
+  <script src="ai.js"></script>
   <script src="settings.js"></script>
 </head>
 <body>
@@ -36,6 +37,33 @@
     <label><input type="radio" name="Country" value="UK" id="Country_UK" /> UK</label>
     <label><input type="radio" name="Country" value="USA" id="Country_USA" /> USA</label>
   </div>
+</section>
+
+<section class="fb-card">
+  <h2>AI auto-detect <span style="font-size:12px;font-weight:500;color:var(--fb-text-muted);">(Beta)</span></h2>
+  <p class="muted">FishBarrel can scan each page you visit with Chrome's on-device AI (Gemini Nano) and pre-fill suspected misleading health claims for you. Everything runs locally &mdash; no page text leaves your computer.</p>
+
+  <p>
+    <label><input type="checkbox" id="aiEnabled" /> Auto-scan pages with on-device AI when capturing claims</label>
+  </p>
+
+  <p>
+    Model status:
+    <span id="aiStatusPill" class="fb-status-pill">Checking&hellip;</span>
+    <button type="button" id="aiCheckStatus" style="margin-left:8px;">Check status</button>
+    <button type="button" id="aiDownload" style="display:none;margin-left:4px;">Download model</button>
+  </p>
+
+  <p class="muted" id="aiUnavailableHelp" style="display:none;font-size:12px;">
+    The on-device model needs Chrome 138 or later and a device with at least 22 GB free disk and 16 GB RAM (or a 4+ GB-VRAM GPU). See <a href="https://developer.chrome.com/docs/ai/get-started" target="_blank" rel="noopener">Chrome's built-in AI docs</a>.
+  </p>
+
+  <details>
+    <summary style="cursor:pointer;color:var(--fb-text-muted);font-size:13px;">Advanced &mdash; prompt template</summary>
+    <p class="muted" style="margin-top:12px;font-size:12px;">Use <code>{REGULATOR}</code> as a placeholder for the regulator matching your selected country, and <code>{SOURCE_TEXT}</code> for the page's text.</p>
+    <textarea id="aiPromptTemplate" rows="14" style="font-size:12px;width:100%;"></textarea>
+    <button type="button" id="aiResetTemplate" style="margin-top:8px;">Reset to default</button>
+  </details>
 </section>
 
 <section class="fb-card">

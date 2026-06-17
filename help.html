@@ -51,6 +51,30 @@
 
 <p>Then click one of the buttons at the top to go to the regulator of your choice. FishBarrel will open the regulator's own complaint form in a new tab and fill in the fields it knows about. Review the form, then submit it on the regulator's site as normal.</p>
 
+<h2>AI auto-detect (Beta)</h2>
+
+<p>FishBarrel can use Chrome's built-in on-device AI (Gemini Nano) to scan each page you visit while gathering claims, and automatically pre-fill any quotes that look like misleading health claims under your country's regulator (ASA, TGA, FTC, etc). The AI's reasoning is dropped straight into each claim's background-info field; you edit it on the Review page before submission.</p>
+
+<p>To enable it, open <strong>Options</strong> and tick <em>Auto-scan pages with on-device AI when capturing claims</em>. The card there shows the current model status:</p>
+
+<ul>
+  <li><strong>Ready</strong> &mdash; you're good to go.</li>
+  <li><strong>Downloadable</strong> &mdash; the model is supported on this device but hasn't been fetched yet. Click <em>Download model</em> to start; it's a ~4 GB one-time download. Make sure you're on an unmetered connection.</li>
+  <li><strong>Downloading&hellip;</strong> &mdash; the model is being fetched in the background. Settings shows a percentage.</li>
+  <li><strong>Unavailable</strong> &mdash; your device or Chrome version doesn't meet the requirements (Chrome 138+, 22&nbsp;GB free disk, 4+&nbsp;GB VRAM <em>or</em> 16+&nbsp;GB RAM). Manual highlighting still works.</li>
+</ul>
+
+<p>How it works in practice:</p>
+
+<ul>
+  <li>Click <strong>Capture new claims</strong> as normal.</li>
+  <li>Browse to a page. As soon as the page loads, the AI quietly scans the text in the background. You don't need to wait or do anything &mdash; quotes appear highlighted on the page when the scan finishes.</li>
+  <li>Each page is scanned at most once per capture session, so revisiting a page doesn't re-process it.</li>
+  <li>You can still manually highlight anything the AI misses, and you can delete AI-detected claims you don't want on the Review page.</li>
+</ul>
+
+<p>The entire scan runs on-device. No page text, no quotes, and none of the AI's output ever leave your computer.</p>
+
 <h2>Known issues</h2>
 
 <h3>Highlighting</h3>

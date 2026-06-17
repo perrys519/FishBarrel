@@ -282,6 +282,26 @@ body.fb-popup {
     color: var(--fb-primary-hover);
 }
 
+.fb-status-pill.fb-ai-ready {
+    background: var(--fb-primary-soft);
+    color: var(--fb-primary-hover);
+}
+
+.fb-status-pill.fb-ai-downloadable {
+    background: var(--fb-accent-soft);
+    color: #8a6d00;
+}
+
+.fb-status-pill.fb-ai-downloading {
+    background: var(--fb-accent-soft);
+    color: #8a6d00;
+}
+
+.fb-status-pill.fb-ai-unavailable {
+    background: var(--fb-danger-soft);
+    color: var(--fb-danger);
+}
+
 .fb-popup-actions {
     display: flex;
     flex-direction: column;
