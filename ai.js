@@ -12,33 +12,51 @@
 
 var FishBarrelAI = (function () {
     var DEFAULT_PROMPT_TEMPLATE = [
-        'You are a strict compliance auditor. Two tasks on the "Source Text" below.',
+        'You are a strict compliance auditor for {REGULATOR}. Two tasks on the Source Text below.',
         '',
-        'TASK A — Identify the practitioner, business, clinic or organisation this page belongs to. Look at headings, the page title, contact details and signatures. Return the name as `organisation_name`. If you genuinely cannot tell, return an empty string. Examples: "Dr Victoria Karney", "Sheffield Homeopathy", "Quantum Holistic Healing Ltd".',
+        'TASK A — Identify the practitioner, business, clinic or organisation this page belongs to. Look at headings, page title, contact details and signatures. Return the name as `organisation_name`. Empty string if you genuinely cannot tell.',
         '',
-        'TASK B — Find violations of {REGULATOR}: quotes that claim a health, medical or psychological treatment is effective for a specific condition without robust scientific evidence. Examples of WHAT TO FLAG:',
-        '  - "Homeopathy can cure your arthritis."',
-        '  - "Helped my child with severe anger problems."',
-        '  - "This treatment rebalances the body and restores health."',
-        '  - Testimonials describing successful treatment of a named condition.',
+        'TASK B — Find EVERY quote on the page that claims a health, medical or psychological treatment is effective for a specific condition without robust scientific evidence. Be thorough — pages typically contain MULTIPLE violations.',
         '',
-        'DO NOT flag any of the following — set is_substantive_claim to false for them:',
-        '  - Biographical info, qualifications, degrees, memberships, years of experience',
-        '  - Descriptions of services or logistics ("I see patients at home", "telephone consultations available")',
-        '  - Contact details, addresses, opening hours, names',
-        '  - Factual statements about data handling, privacy, fees, GDPR',
-        '  - Disclaimers',
-        '  - Generic descriptions of what a therapy involves without claiming it works',
+        'FLAG these patterns (set is_substantive_claim: true):',
         '',
-        'For each candidate quote, populate the JSON object with:',
-        '  - quote: exact word-for-word substring of the Source Text',
-        '  - reason: one sentence on why it violates {REGULATOR}',
-        '  - is_substantive_claim: true ONLY if the quote actually asserts efficacy for a condition; false for anything in the "DO NOT flag" list',
+        '1. PATIENT TESTIMONIALS describing personal experience with the treatment for a named condition or symptom. These are the most common violation. Look for quotes (usually in quotation marks, attributed to a named person) that say any of:',
+        '   • "The remedy / treatment / medicine worked for my [condition]"',
+        '   • "Helped my child / partner / mother with [condition]"',
+        '   • "[Treatment] has helped me to deal with my [condition]"',
+        '   • "I am now free from / better from / recovered from [condition]"',
+        '   • "Within X months / a year, [my condition] showed no signs / was gone"',
+        '   • "She doesn\'t need [medication] any more"',
+        '   • "Cured my [condition]" / "Relieved my [symptoms]" / "Improved my [condition]"',
+        '   • "Took my child to [practitioner] for [condition], worked wonders"',
+        '   • Any quote naming a specific illness or symptom (asthma, bronchitis, MS, depression, anger, digestive issues, pain, anxiety, eczema, allergies, etc.) and crediting the treatment with improvement.',
+        '',
+        '2. DIRECT EFFICACY CLAIMS by the practitioner or the site:',
+        '   • "We treat a wide range of medical conditions"',
+        '   • "[Treatment] rebalances the body and restores health"',
+        '   • "Patients respond particularly well to [treatment]"',
+        '   • "Homeopathy can cure [condition]"',
+        '   • "[Treatment] is effective for [condition]"',
+        '',
+        'When in doubt, INCLUDE the quote as a violation. False positives are easy for the user to delete; false negatives let misleading claims pass.',
+        '',
+        'DO NOT FLAG (set is_substantive_claim: false ONLY for these specific cases):',
+        '   • Practitioner qualifications and credentials (degrees, memberships, "X years experience")',
+        '   • Service logistics ("I see patients at home", "telephone consultations available", appointment scheduling)',
+        '   • Contact details, addresses, phone numbers, opening hours',
+        '   • Disclaimers ("I am not a pharmacy", "consult your doctor")',
+        '   • Generic statements about a therapy without naming a condition or claiming it works ("Homeopathy is a complementary therapy")',
+        '   • Privacy / GDPR / data handling statements',
+        '',
+        'OUTPUT FORMAT — for each quote:',
+        '   • quote: exact word-for-word substring of the Source Text (no paraphrasing, no edits)',
+        '   • reason: one sentence on why it violates {REGULATOR}',
+        '   • is_substantive_claim: true for FLAG items, false for DO NOT FLAG items',
         '',
         'CRITICAL RULES:',
-        '1. Every "quote" MUST be an exact, word-for-word string match from the Source Text. Do NOT paraphrase or invent.',
-        '2. If a candidate quote is in the "DO NOT flag" list, OMIT it entirely. Do not include it with is_substantive_claim: false unless you are uncertain.',
-        '3. If no clear efficacy claims are found, return: {"violations": []}',
+        '1. Every "quote" MUST appear verbatim in the Source Text. Copy character-for-character including punctuation.',
+        '2. Scan the ENTIRE Source Text, including testimonial sections. Do not stop after finding one violation.',
+        '3. If no clear efficacy claims exist, return: {"violations": []}',
         '',
         'Source Text:',
         '"""',
@@ -102,12 +120,14 @@ var FishBarrelAI = (function () {
     var MIN_CHARS_PER_CHUNK = 400;
     var MAX_CHUNKS_PER_PAGE = 5;
 
-    // Lower-than-default temperature for more deterministic compliance scans.
-    // Default (~1.0) makes Nano stochastic — same input, different answers —
-    // which manifested as testimonials being flagged on one scan and missed
-    // on the next. 0.3 keeps it focused without freezing it.
-    var SESSION_TEMPERATURE = 0.3;
-    var SESSION_TOP_K = 3;
+    // Sampling parameters. 0.3 / topK 3 turned out to be too aggressive a
+    // clamp — Nano only flagged near-verbatim matches to the example phrases
+    // in the prompt, missing semantically-identical testimonials that
+    // happened to use different wording. 0.7 / topK 8 keeps the model
+    // reasonably stable across re-scans while letting it generalise from
+    // example patterns to similar ones. (Default temperature is around 1.0.)
+    var SESSION_TEMPERATURE = 0.7;
+    var SESSION_TOP_K = 8;
 
     function regulatorForCountry(country) {
         if (!country || typeof Authorities === "undefined") {
