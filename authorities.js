@@ -707,13 +707,24 @@ ASAAuth.TryFill = function (response) {
     // CSRF token and a Continue button. Auto-click it so the user lands
     // directly on the first step with fillable fields. Subsequent Continues
     // are left to the user so they can review what FishBarrel filled in.
+    //
+    // We NEVER auto-click the final SUBMIT COMPLAINT button. The button id
+    // happens to be reused across steps (it's also `continue-button` on
+    // the final step), so we additionally check that the button's visible
+    // text doesn't contain "submit" — that's a hard tripwire against auto-
+    // submitting, even if something later goes wrong with the action check.
+    // ASA's final step also gates on Cloudflare Turnstile, which only a
+    // human can satisfy.
     var form = ASAAuth.findComplaintForm();
     if (form && form.action && form.action.indexOf("saveComplaintStepintro") !== -1 && !ASAAuth._introClicked) {
         var introBtn = document.getElementById("continue-button");
         if (introBtn) {
-            ASAAuth._introClicked = true;
-            introBtn.click();
-            return;
+            var btnText = ((introBtn.innerText || "") + "").trim().toLowerCase();
+            if (btnText.indexOf("submit") === -1) {
+                ASAAuth._introClicked = true;
+                introBtn.click();
+                return;
+            }
         }
     }
 
