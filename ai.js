@@ -259,7 +259,10 @@ var FishBarrelAI = (function () {
                 url: url,
                 textRangeToStringFormatText: quote,
                 instanceSelected: 1,
-                backgroundInfo: reason || ""
+                backgroundInfo: reason || "",
+                // Background drops the claim if the same quote+url is already
+                // captured. Lets re-scans of dynamic pages stay idempotent.
+                dedupByQuote: true
             }, function (response) {
                 void chrome.runtime.lastError;
                 if (response && typeof FishBarrel !== "undefined" && FishBarrel.HighlightText) {
@@ -283,19 +286,25 @@ var FishBarrelAI = (function () {
     // Fixed-position toast in the page reporting scan results. Auto-dismisses
     // after a few seconds. Uses the brand yellow so users recognise it as
     // FishBarrel rather than confusing it with the page's own UI.
-    function showScanToast(pageCount, totalCount) {
+    function showScanToast(pageCount, totalCount, isRescan) {
+        // On re-scans of dynamic pages (carousels etc.) we skip the toast
+        // when nothing new was found — would otherwise spam every few
+        // seconds as the carousel cycles through content we've already
+        // captured.
+        if (isRescan && pageCount === 0) return;
         try {
             if (!document.body) return;
             var existing = document.getElementById("__FishBarrelAIToast__");
             if (existing) existing.remove();
 
+            var noun = isRescan ? "new claim" : "claim";
             var msg;
             if (pageCount === 0) {
-                msg = "FishBarrel: AI scan complete — no new claims found on this page. " + totalCount + " total in this complaint.";
+                msg = "FishBarrel: AI scan complete — no claims found on this page. " + totalCount + " total in this complaint.";
             } else if (pageCount === 1) {
-                msg = "FishBarrel: AI scan complete — 1 claim found on this page. " + totalCount + " total in this complaint.";
+                msg = "FishBarrel: AI scan complete — 1 " + noun + " found on this page. " + totalCount + " total in this complaint.";
             } else {
-                msg = "FishBarrel: AI scan complete — " + pageCount + " claims found on this page. " + totalCount + " total in this complaint.";
+                msg = "FishBarrel: AI scan complete — " + pageCount + " " + noun + "s found on this page. " + totalCount + " total in this complaint.";
             }
 
             var t = document.createElement("div");
@@ -334,6 +343,8 @@ var FishBarrelAI = (function () {
         }
     }
 
+    // Entry point called from FishBarrel.Init(). Runs the first scan (gated by
+    // the URL-dedup set) and then installs the dynamic-content watcher.
     async function maybeScan(url, sourceText) {
         console.log("[FishBarrelAI] maybeScan called for", url, "(" + (sourceText || "").length + " chars)");
         try {
@@ -343,35 +354,51 @@ var FishBarrelAI = (function () {
             }
 
             if (await hasAiScannedUrl(url)) {
-                console.log("[FishBarrelAI] skipping: URL already scanned this session — call FishBarrelAI.clearScannedUrls() in this console to reset");
-                return;
+                console.log("[FishBarrelAI] skipping initial scan: URL already scanned this session — call FishBarrelAI.clearScannedUrls() in this console to reset");
+                // Don't return — still install the watcher for SPA / carousel
+                // updates the user might trigger after revisiting.
+            } else {
+                markAiScannedUrl(url);
+                await performScan(url, sourceText, /*isRescan=*/false);
             }
-            markAiScannedUrl(url);
+
+            watchForDynamicContent(url, sourceText);
+        } catch (e) {
+            console.log("[FishBarrelAI] maybeScan FAILED:", e);
+        }
+    }
+
+    // Core scan logic. Called by maybeScan for the initial pass and by the
+    // dynamic-content watcher for re-scans.
+    async function performScan(url, sourceText, isRescan) {
+        try {
+            if (!sourceText || sourceText.length < 50) {
+                console.log("[FishBarrelAI] performScan: source text too short, skipping");
+                return 0;
+            }
 
             var settings = await getSettings();
-            console.log("[FishBarrelAI] settings — aiEnabled:", settings && settings.aiEnabled, "Country:", settings && settings.Country, "has custom template:", !!(settings && settings.aiPromptTemplate));
+            if (!isRescan) {
+                console.log("[FishBarrelAI] settings — aiEnabled:", settings && settings.aiEnabled, "Country:", settings && settings.Country, "has custom template:", !!(settings && settings.aiPromptTemplate));
+            }
             if (!settings || settings.aiEnabled !== "1") {
                 console.log("[FishBarrelAI] skipping: AI auto-detect is not enabled in Settings (aiEnabled !== '1')");
-                return;
+                return 0;
             }
 
             var status = await availability();
-            console.log("[FishBarrelAI] LanguageModel availability:", status);
             if (status !== "available") {
-                console.log("[FishBarrelAI] skipping: model not 'available'. Open Settings to download / check status.");
-                return;
+                console.log("[FishBarrelAI] skipping: model not 'available' (got '" + status + "'). Open Settings to download / check status.");
+                return 0;
             }
 
             var regulator = regulatorForCountry(settings.Country);
-            console.log("[FishBarrelAI] using regulator framing:", regulator);
+            if (!isRescan) console.log("[FishBarrelAI] using regulator framing:", regulator);
 
             var template = settings.aiPromptTemplate || DEFAULT_PROMPT_TEMPLATE;
             var chunks = chunkText(sourceText);
-            console.log("[FishBarrelAI] page split into", chunks.length, "chunk(s); sizes:", chunks.map(function (c) { return c.length; }));
-            if (chunks.length === 0) {
-                console.log("[FishBarrelAI] skipping: no chunks produced");
-                return;
-            }
+            console.log("[FishBarrelAI]" + (isRescan ? " RESCAN" : "") + " page split into", chunks.length, "chunk(s); sizes:", chunks.map(function (c) { return c.length; }));
+            if (chunks.length === 0) return 0;
 
             var session;
             try {
@@ -379,23 +406,25 @@ var FishBarrelAI = (function () {
                     expectedInputs: [{ type: "text", languages: ["en"] }],
                     expectedOutputs: [{ type: "text", languages: ["en"] }]
                 });
-                console.log("[FishBarrelAI] session created; contextWindow:", session.contextWindow, "tokens");
+                if (!isRescan) console.log("[FishBarrelAI] session created; contextWindow:", session.contextWindow, "tokens");
             } catch (e) {
                 console.log("[FishBarrelAI] LanguageModel.create FAILED:", e);
-                return;
+                return 0;
             }
 
             var allViolations = [];
             var firstOrgName = "";
             for (var i = 0; i < chunks.length; i++) {
                 var prompt = buildPrompt(template, regulator, chunks[i]);
-                console.log("[FishBarrelAI] chunk " + (i + 1) + "/" + chunks.length + " prompt (" + prompt.length + " chars, first 400):", prompt.substring(0, 400) + (prompt.length > 400 ? "…" : ""));
-                try {
-                    if (typeof session.measureContextUsage === "function") {
-                        var cost = await session.measureContextUsage(prompt, { responseConstraint: VIOLATIONS_SCHEMA });
-                        console.log("[FishBarrelAI] chunk " + (i + 1) + " context cost:", cost, "/", session.contextWindow);
-                    }
-                } catch (e) { /* measure is optional */ }
+                if (!isRescan) {
+                    console.log("[FishBarrelAI] chunk " + (i + 1) + "/" + chunks.length + " prompt (" + prompt.length + " chars, first 400):", prompt.substring(0, 400) + (prompt.length > 400 ? "…" : ""));
+                    try {
+                        if (typeof session.measureContextUsage === "function") {
+                            var cost = await session.measureContextUsage(prompt, { responseConstraint: VIOLATIONS_SCHEMA });
+                            console.log("[FishBarrelAI] chunk " + (i + 1) + " context cost:", cost, "/", session.contextWindow);
+                        }
+                    } catch (e) { /* measure is optional */ }
+                }
                 var result = await runPromptForChunkVerbose(session, prompt, i + 1);
                 if (!firstOrgName && result.organisationName) firstOrgName = result.organisationName;
                 allViolations = allViolations.concat(result.violations || []);
@@ -406,7 +435,7 @@ var FishBarrelAI = (function () {
                 setOrgNameIfEmpty(firstOrgName);
             }
 
-            console.log("[FishBarrelAI] total violations from model:", allViolations.length);
+            console.log("[FishBarrelAI]" + (isRescan ? " rescan" : ""), "total violations from model:", allViolations.length);
 
             var emitted = 0;
             var dropped = 0;
@@ -430,18 +459,11 @@ var FishBarrelAI = (function () {
                     dropped++;
                     continue;
                 }
-                // Sense-check 1: the model committed to whether this is actually
-                // a substantive claim. Trust that boolean over the fact that it
-                // bothered to include the quote at all.
                 if (violation.is_substantive_claim === false) {
                     console.log("[FishBarrelAI] violation #" + (v + 1) + " SELF-FLAGGED as not a claim by model, dropped:", JSON.stringify(actual.substring(0, 80)));
                     dropped++;
                     continue;
                 }
-                // Sense-check 2: even when is_substantive_claim is true or
-                // missing, the reason text often gives the model away —
-                // "factual statement of qualifications", "not a claim of
-                // efficacy", "could be interpreted as", etc.
                 if (reasonLooksLikeSelfAdmission(violation.reason)) {
                     console.log("[FishBarrelAI] violation #" + (v + 1) + " reason admits non-claim, dropped:", JSON.stringify(actual.substring(0, 80)), "reason:", violation.reason);
                     dropped++;
@@ -450,21 +472,114 @@ var FishBarrelAI = (function () {
                 seenQuotes[actual.toLowerCase()] = true;
                 console.log("[FishBarrelAI] violation #" + (v + 1) + " ACCEPTED:", JSON.stringify(actual.substring(0, 80)) + (actual.length > 80 ? "…" : ""));
                 emitPromises.push(emitClaim(url, actual, violation.reason));
-                emitted++;
             }
 
-            // Wait for every addClaim to land so the total count below is
-            // accurate. emitClaim resolves with the background's response.
-            await Promise.all(emitPromises);
+            // Wait for every addClaim to land so we know which were genuinely
+            // new vs deduped by the background. emitClaim resolves with
+            // { duplicate: true } for already-seen quotes.
+            var emitResults = await Promise.all(emitPromises);
+            var deduped = 0;
+            for (var r = 0; r < emitResults.length; r++) {
+                if (emitResults[r] && emitResults[r].duplicate) deduped++;
+                else if (emitResults[r]) emitted++;
+            }
+            dropped += deduped;
 
             var total = await getTotalClaims();
-            console.log("[FishBarrelAI] done — emitted", emitted, "claim(s),", dropped, "dropped, total in complaint:", total, "URL:", url);
+            console.log("[FishBarrelAI]" + (isRescan ? " rescan" : ""), "done — emitted", emitted, "new,", deduped, "deduped,", dropped - deduped, "filtered, total in complaint:", total, "URL:", url);
 
-            showScanToast(emitted, total);
+            showScanToast(emitted, total, !!isRescan);
+            return emitted;
         } catch (e) {
-            console.log("[FishBarrelAI] maybeScan FAILED:", e);
+            console.log("[FishBarrelAI] performScan FAILED:", e);
+            return 0;
         }
     }
+
+    // Dynamic content watcher. Carousels, AJAX-driven sections, and SPA
+    // route changes mutate the DOM without a full navigation; the URL dedup
+    // (which uses location.href as key) would otherwise leave new content
+    // unscanned. We hash document.body.innerText, watch for mutations, and
+    // re-scan when the hash settles to something new.
+    //
+    // SCAN_DEBOUNCE_MS — quiet period after the LAST mutation before scanning.
+    //   Catches the natural "carousel slides in then settles" rhythm.
+    // SCAN_MAX_WAIT_MS — force a scan after this even if mutations keep coming
+    //   (so pages that mutate continuously still get scanned periodically).
+    // MIN_RESCAN_INTERVAL_MS — minimum time between scans of the same URL.
+    //   Caps Nano usage to a sane rate.
+    var SCAN_DEBOUNCE_MS = 2500;
+    var SCAN_MAX_WAIT_MS = 8000;
+    var MIN_RESCAN_INTERVAL_MS = 12000;
+
+    function simpleHash(s) {
+        var h = 0;
+        for (var i = 0; i < s.length; i++) {
+            h = ((h << 5) - h) + s.charCodeAt(i);
+            h |= 0;
+        }
+        return h;
+    }
+
+    function watchForDynamicContent(url, initialText) {
+        if (typeof MutationObserver === "undefined" || !document.body) return;
+        if (FishBarrelAIWatchers[url]) return; // already watching this URL
+        FishBarrelAIWatchers[url] = true;
+
+        var lastHash = simpleHash(initialText || "");
+        var lastScanAt = Date.now();
+        var debounceTimer = null;
+        var maxWaitTimer = null;
+        var scanning = false;
+
+        function fireScan() {
+            if (debounceTimer) { clearTimeout(debounceTimer); debounceTimer = null; }
+            if (maxWaitTimer) { clearTimeout(maxWaitTimer); maxWaitTimer = null; }
+
+            if (scanning) return;
+
+            var now = Date.now();
+            if (now - lastScanAt < MIN_RESCAN_INTERVAL_MS) {
+                // Throttled. Reset the debounce so we try again later.
+                debounceTimer = window.setTimeout(fireScan, MIN_RESCAN_INTERVAL_MS - (now - lastScanAt));
+                return;
+            }
+
+            var newText = (document.body && document.body.innerText) || "";
+            var newHash = simpleHash(newText);
+            if (newHash === lastHash) {
+                // No substantive text change; observed mutations were
+                // attribute/style/animation noise. Don't burn a model call.
+                return;
+            }
+
+            lastHash = newHash;
+            lastScanAt = now;
+            scanning = true;
+            console.log("[FishBarrelAI] dynamic content detected on", url, "— re-scanning");
+            performScan(url, newText, /*isRescan=*/true).finally(function () {
+                scanning = false;
+            });
+        }
+
+        function schedule() {
+            if (debounceTimer) clearTimeout(debounceTimer);
+            debounceTimer = window.setTimeout(fireScan, SCAN_DEBOUNCE_MS);
+            if (!maxWaitTimer) {
+                maxWaitTimer = window.setTimeout(fireScan, SCAN_MAX_WAIT_MS);
+            }
+        }
+
+        var observer = new MutationObserver(schedule);
+        observer.observe(document.body, {
+            childList: true,
+            subtree: true,
+            characterData: true
+        });
+        console.log("[FishBarrelAI] watching", url, "for dynamic content changes");
+    }
+
+    var FishBarrelAIWatchers = {};
 
     // Verbose variant of runPromptForChunk — logs raw response for debugging.
     // Returns { organisationName, violations }.

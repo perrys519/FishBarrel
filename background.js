@@ -260,6 +260,23 @@ async function handleMessage(request, sender) {
         case "addClaim": {
             if (!ClaimGroup.IsCollecting) return { ok: false };
             if (!ClaimGroup.Current) ClaimGroup.Current = new ClaimGroup();
+
+            // request.dedupByQuote is set by the AI scanner so re-scans of
+            // dynamic pages (carousels, AJAX updates) don't add the same
+            // testimonial twice. Manual selections leave it false so a user
+            // can re-select the same passage if they want.
+            if (request.dedupByQuote && request.selectedText) {
+                var key = String(request.selectedText).trim().toLowerCase();
+                for (var i = 0; i < ClaimGroup.Current.claims.length; i++) {
+                    var existing = ClaimGroup.Current.claims[i];
+                    if (existing.url === request.url
+                        && existing.claimText
+                        && existing.claimText.trim().toLowerCase() === key) {
+                        return { duplicate: true, claimIndex: i, id: existing.id };
+                    }
+                }
+            }
+
             // request.backgroundInfo is set by the AI scanner with the LLM's
             // per-claim reasoning. The manual OnMouseUp flow doesn't pass it,
             // so it defaults to "" — the user fills it in on the review page.
