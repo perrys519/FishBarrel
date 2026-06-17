@@ -25,11 +25,14 @@ FishBarrel.Init = function () {
     // dedup lives in the service worker so SPA navigations and revisits don't
     // re-scan the same page in one capture session.
     if (typeof FishBarrelAI !== "undefined" && document.body) {
+        console.log("[FishBarrel] capture active; handing off to FishBarrelAI.maybeScan");
         try {
             FishBarrelAI.maybeScan(window.location.href, document.body.innerText || "");
         } catch (e) {
-            // Scanner errors are non-fatal — manual capture keeps working.
+            console.log("[FishBarrel] AI scanner threw synchronously:", e);
         }
+    } else {
+        console.log("[FishBarrel] FishBarrelAI is not defined on this page (ai.js didn't load?)");
     }
 };
 

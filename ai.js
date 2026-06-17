@@ -218,25 +218,43 @@ var FishBarrelAI = (function () {
     }
 
     async function maybeScan(url, sourceText) {
+        console.log("[FishBarrelAI] maybeScan called for", url, "(" + (sourceText || "").length + " chars)");
         try {
-            if (!sourceText || sourceText.length < 50) return;
+            if (!sourceText || sourceText.length < 50) {
+                console.log("[FishBarrelAI] skipping: source text too short");
+                return;
+            }
 
-            if (await hasAiScannedUrl(url)) return;
+            if (await hasAiScannedUrl(url)) {
+                console.log("[FishBarrelAI] skipping: URL already scanned this session — call FishBarrelAI.clearScannedUrls() in this console to reset");
+                return;
+            }
             markAiScannedUrl(url);
 
             var settings = await getSettings();
-            if (!settings || settings.aiEnabled !== "1") return;
+            console.log("[FishBarrelAI] settings — aiEnabled:", settings && settings.aiEnabled, "Country:", settings && settings.Country, "has custom template:", !!(settings && settings.aiPromptTemplate));
+            if (!settings || settings.aiEnabled !== "1") {
+                console.log("[FishBarrelAI] skipping: AI auto-detect is not enabled in Settings (aiEnabled !== '1')");
+                return;
+            }
 
             var status = await availability();
+            console.log("[FishBarrelAI] LanguageModel availability:", status);
             if (status !== "available") {
-                console.log("[FishBarrelAI] model status:", status, "— skipping page");
+                console.log("[FishBarrelAI] skipping: model not 'available'. Open Settings to download / check status.");
                 return;
             }
 
             var regulator = regulatorForCountry(settings.Country);
+            console.log("[FishBarrelAI] using regulator framing:", regulator);
+
             var template = settings.aiPromptTemplate || DEFAULT_PROMPT_TEMPLATE;
             var chunks = chunkText(sourceText);
-            if (chunks.length === 0) return;
+            console.log("[FishBarrelAI] page split into", chunks.length, "chunk(s); sizes:", chunks.map(function (c) { return c.length; }));
+            if (chunks.length === 0) {
+                console.log("[FishBarrelAI] skipping: no chunks produced");
+                return;
+            }
 
             var session;
             try {
@@ -244,43 +262,111 @@ var FishBarrelAI = (function () {
                     expectedInputs: [{ type: "text", languages: ["en"] }],
                     expectedOutputs: [{ type: "text", languages: ["en"] }]
                 });
+                console.log("[FishBarrelAI] session created; contextWindow:", session.contextWindow, "tokens");
             } catch (e) {
-                console.log("[FishBarrelAI] LanguageModel.create failed:", e);
+                console.log("[FishBarrelAI] LanguageModel.create FAILED:", e);
                 return;
             }
 
             var allViolations = [];
             for (var i = 0; i < chunks.length; i++) {
                 var prompt = buildPrompt(template, regulator, chunks[i]);
-                var violations = await runPromptForChunk(session, prompt);
+                console.log("[FishBarrelAI] chunk " + (i + 1) + "/" + chunks.length + " prompt (" + prompt.length + " chars, first 400):", prompt.substring(0, 400) + (prompt.length > 400 ? "…" : ""));
+                try {
+                    if (typeof session.measureContextUsage === "function") {
+                        var cost = await session.measureContextUsage(prompt, { responseConstraint: VIOLATIONS_SCHEMA });
+                        console.log("[FishBarrelAI] chunk " + (i + 1) + " context cost:", cost, "/", session.contextWindow);
+                    }
+                } catch (e) { /* measure is optional */ }
+                var violations = await runPromptForChunkVerbose(session, prompt, i + 1);
                 allViolations = allViolations.concat(violations || []);
             }
             try { session.destroy(); } catch (e) { /* ignore */ }
 
+            console.log("[FishBarrelAI] total violations from model:", allViolations.length);
+            if (allViolations.length === 0) {
+                console.log("[FishBarrelAI] model returned no violations for this page. URL stays marked so we don't loop — call FishBarrelAI.clearScannedUrls() to retry.");
+                return;
+            }
+
             var emitted = 0;
+            var dropped = 0;
             var seenQuotes = {};
             for (var v = 0; v < allViolations.length; v++) {
                 var violation = allViolations[v];
-                if (!violation || !violation.quote) continue;
+                if (!violation || !violation.quote) {
+                    console.log("[FishBarrelAI] violation #" + (v + 1) + " dropped: no quote field", violation);
+                    dropped++;
+                    continue;
+                }
                 var actual = findQuoteInSource(sourceText, violation.quote);
-                if (!actual) continue;
-                if (seenQuotes[actual.toLowerCase()]) continue;
+                if (!actual) {
+                    console.log("[FishBarrelAI] violation #" + (v + 1) + " HALLUCINATED (not in source), dropped. Model said:", JSON.stringify(violation.quote));
+                    dropped++;
+                    continue;
+                }
+                if (seenQuotes[actual.toLowerCase()]) {
+                    console.log("[FishBarrelAI] violation #" + (v + 1) + " duplicate, dropped:", JSON.stringify(actual.substring(0, 80)));
+                    dropped++;
+                    continue;
+                }
                 seenQuotes[actual.toLowerCase()] = true;
+                console.log("[FishBarrelAI] violation #" + (v + 1) + " ACCEPTED:", JSON.stringify(actual.substring(0, 80)) + (actual.length > 80 ? "…" : ""));
                 emitClaim(url, actual, violation.reason);
                 emitted++;
             }
 
-            if (emitted > 0) {
-                console.log("[FishBarrelAI] added " + emitted + " claim(s) from " + url);
-            }
+            console.log("[FishBarrelAI] done — emitted", emitted, "claim(s),", dropped, "dropped, for", url);
         } catch (e) {
-            console.log("[FishBarrelAI] maybeScan failed:", e);
+            console.log("[FishBarrelAI] maybeScan FAILED:", e);
         }
+    }
+
+    // Verbose variant of runPromptForChunk — logs raw response for debugging.
+    async function runPromptForChunkVerbose(session, prompt, chunkIndex) {
+        try {
+            var raw = await session.prompt(prompt, {
+                responseConstraint: VIOLATIONS_SCHEMA,
+                omitResponseConstraintInput: true
+            });
+            console.log("[FishBarrelAI] chunk " + chunkIndex + " raw response:", raw);
+            var parsed;
+            try {
+                parsed = JSON.parse(raw);
+            } catch (jsonErr) {
+                var cleaned = String(raw).replace(/^```(?:json)?\s*/i, "").replace(/```\s*$/i, "").trim();
+                console.log("[FishBarrelAI] chunk " + chunkIndex + " raw didn't parse; trying cleaned:", cleaned.substring(0, 200));
+                parsed = JSON.parse(cleaned);
+            }
+            if (parsed && Array.isArray(parsed.violations)) {
+                console.log("[FishBarrelAI] chunk " + chunkIndex + " parsed", parsed.violations.length, "violation(s)");
+                return parsed.violations;
+            }
+            console.log("[FishBarrelAI] chunk " + chunkIndex + " parsed but no violations array:", parsed);
+            return [];
+        } catch (e) {
+            console.log("[FishBarrelAI] chunk " + chunkIndex + " prompt FAILED:", e);
+            return [];
+        }
+    }
+
+    // Console-callable helper to flush the per-session dedup set so the user
+    // can retest a page without toggling Capture mode off and on. Usage from
+    // any page's DevTools console: FishBarrelAI.clearScannedUrls()
+    function clearScannedUrls() {
+        return new Promise(function (resolve) {
+            chrome.runtime.sendMessage({ type: "clearAiScannedUrls" }, function (response) {
+                void chrome.runtime.lastError;
+                console.log("[FishBarrelAI] cleared scanned-URL set");
+                resolve(response);
+            });
+        });
     }
 
     return {
         maybeScan: maybeScan,
         availability: availability,
+        clearScannedUrls: clearScannedUrls,
         DEFAULT_PROMPT_TEMPLATE: DEFAULT_PROMPT_TEMPLATE,
         // exposed for the settings page's prompt template editor
         regulatorForCountry: regulatorForCountry,

@@ -290,6 +290,11 @@ async function handleMessage(request, sender) {
             persistState();
             return { ok: true };
 
+        case "clearAiScannedUrls":
+            AiScannedUrls = {};
+            persistState();
+            return { ok: true };
+
         case "getSettings": {
             return await FBStorage.getLocal(null);
         }
