@@ -116,13 +116,49 @@ function waitForAiScanComplete(maxMs) {
     });
 }
 
-function harvestLinksFromTab(tabId) {
-    return new Promise(function (resolve) {
-        chrome.tabs.sendMessage(tabId, { type: "harvestLinks" }, function (response) {
-            void chrome.runtime.lastError;
-            resolve((response && response.links) || []);
+// Harvest anchors from every frame in the tab. Wix and other site-builder
+// platforms render content inside nested cross-origin iframes; the top
+// document often has zero <a> tags of its own. chrome.scripting with
+// allFrames:true lets us reach every frame the extension has host
+// permissions for, so we surface those iframe links too.
+async function harvestLinksFromTab(tabId) {
+    var seen = {};
+    var combined = [];
+    try {
+        var results = await chrome.scripting.executeScript({
+            target: { tabId: tabId, allFrames: true },
+            func: function () {
+                var out = [];
+                try {
+                    var anchors = document.querySelectorAll('a[href]');
+                    for (var i = 0; i < anchors.length; i++) {
+                        var h = anchors[i].href || "";
+                        if (h && /^https?:/i.test(h)) out.push(h);
+                    }
+                } catch (e) { /* DOM access denied; return what we have */ }
+                return out;
+            }
         });
-    });
+        var frameCounts = [];
+        for (var i = 0; i < results.length; i++) {
+            var arr = (results[i] && results[i].result) || [];
+            frameCounts.push("frame" + (results[i].frameId != null ? results[i].frameId : "?") + ":" + arr.length);
+            for (var j = 0; j < arr.length; j++) {
+                try {
+                    var u = new URL(arr[j]);
+                    u.hash = "";
+                    var n = u.href;
+                    if (!seen[n]) { seen[n] = true; combined.push(n); }
+                } catch (e) { /* malformed href, skip */ }
+            }
+        }
+        if (frameCounts.length > 0) {
+            console.log("[FishBarrel] spider harvest tab", tabId, "frame counts:", frameCounts.join(", "));
+        }
+    } catch (e) {
+        console.log("[FishBarrel] spider executeScript harvest failed on tab", tabId + ":", e);
+    }
+    return combined;
 }
 
 async function spiderStart(rootUrl) {
