@@ -134,20 +134,62 @@ FishBarrel.MonitorFormElementsLoop = function () {
 
 FishBarrel.FillElementByObjectReference = function (el, value) {
     try {
-        if (el.type == "text") el.value = value;
-        if (el.type == "textarea") el.value = value;
-        if (el.type == "checkbox") el.checked = value;
-        if (el.type == "radio") el.checked = value;
-        if (el.type == "select-one") {
+        var t = el.type || (el.tagName || "").toLowerCase();
+        if (t == "text" || t == "email" || t == "tel" || t == "url" || t == "search" || t == "number" || t == "date" || t == "password" || t == "textarea") {
+            el.value = value;
+        } else if (t == "checkbox" || t == "radio") {
+            el.checked = !!value;
+        } else if (t == "select-one" || t == "select-multiple" || el.tagName == "SELECT") {
             for (var i = 0; i < el.options.length; i++) {
                 if (el.options[i].value == value || el.options[i].text == value) {
                     el.selectedIndex = i;
+                    break;
                 }
             }
         }
+        // Notify any JS framework wired to the field that its value changed.
+        // Without this, React/Vue/Alpine-driven forms ignore programmatic value sets.
+        el.dispatchEvent(new Event('input', { bubbles: true }));
+        el.dispatchEvent(new Event('change', { bubbles: true }));
     } catch (oErr) {
         // form element shape didn't match what authority expected; skip silently
     }
+};
+
+// Fill every input matching the given `name` attribute (across all forms).
+// Returns true if at least one element matched.
+FishBarrel.FillByName = function (name, value) {
+    var els = document.getElementsByName(name);
+    var any = false;
+    for (var i = 0; i < els.length; i++) {
+        FishBarrel.FillElementByObjectReference(els[i], value);
+        any = true;
+    }
+    return any;
+};
+
+// Try each candidate name in order; fill the first one that exists. Returns
+// the name that matched, or null if nothing did.
+FishBarrel.FillFirstMatch = function (candidates, value) {
+    for (var i = 0; i < candidates.length; i++) {
+        if (FishBarrel.FillByName(candidates[i], value)) return candidates[i];
+    }
+    return null;
+};
+
+// Set a specific radio in a radio-group to checked by value (different from
+// FillByName which would tick every radio in the group).
+FishBarrel.SelectRadioByValue = function (name, value) {
+    var els = document.getElementsByName(name);
+    for (var i = 0; i < els.length; i++) {
+        if (els[i].type == "radio" && els[i].value == value) {
+            els[i].checked = true;
+            els[i].dispatchEvent(new Event('input', { bubbles: true }));
+            els[i].dispatchEvent(new Event('change', { bubbles: true }));
+            return true;
+        }
+    }
+    return false;
 };
 
 FishBarrel.FillElement = function (elementId, value) {

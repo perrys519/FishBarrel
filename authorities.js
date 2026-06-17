@@ -609,6 +609,22 @@ Authorities[MHRAAuth.Key] = MHRAAuth;
 ##################################################################
 ASA / Advertising Standards Authority (UK)
 ##################################################################
+
+The ASA's complaint form was rebuilt around 2020. The old multi-page ASP.NET
+flow (Step1.aspx ... Step5.aspx with `phmain_0_phtop_1_*` field ids) is gone.
+
+The current form lives at a single URL — https://www.asa.org.uk/make-a-complaint.html
+— and re-renders inline as the user clicks Continue. Field names are now
+lowercase snake_case (`address_1`, `town`, `country`, `advert_url`,
+`complaint_advertisement_type_level_1/2/3`, etc.). Importantly, the form is
+JS-driven and changes which fields are visible based on user choices; FishBarrel
+can't predict which advertisement type / topic the user will pick, so those
+cascading selects are left for the user to fill.
+
+A MutationObserver re-runs the autofill each time the page re-renders a new
+step so contact details, the description, and the advert URL get populated as
+their fields appear. Continue buttons are NOT clicked automatically — the user
+walks through the form themselves so they can review each step.
 */
 var ASAAuth = {};
 ASAAuth.Key = "ASA";
@@ -617,104 +633,88 @@ ASAAuth.DisallowHomeopathy = false;
 ASAAuth.ForceJustification = true;
 ASAAuth.Name = "Advertising Standards Authority";
 
-ASAAuth.ComposeComplaint = function () {
-    navigateActiveTab("http://www.asa.org.uk/Consumers/How-to-complain/Online-Form/Step1.aspx");
-};
+// The "I am a member of the public" option of the about_the_complaint radio.
+// Extracted from the make_a_complaint JS bundle.
+ASAAuth.PUBLIC_COMPLAINT_GUID = "7387371E-ED8F-4BFB-B1ADCB86894B7FB6";
 
-ASAAuth.AttachSubmitButton = function () {
-    var btn = document.getElementById('phmain_0_phtop_1_btnSubmit');
-    if (btn && !btn.IsAttached) {
-        btn.addEventListener('click', function () { FishBarrel.ComplaintSent("ASA"); }, false);
-        btn.style.border = "4px solid red";
-        btn.IsAttached = true;
-    }
-    window.setTimeout(ASAAuth.AttachSubmitButton, 300);
+ASAAuth.ComposeComplaint = function () {
+    navigateActiveTab("https://www.asa.org.uk/make-a-complaint.html");
 };
 
 ASAAuth.AutoFillForm = function () {
-    var ASAForm1Url = "http://www.asa.org.uk/Consumers/How-to-complain/Online-Form/Step";
-    if (window.location.href.indexOf(ASAForm1Url) != 0) return;
+    if (window.location.href.indexOf("https://www.asa.org.uk/make-a-complaint") != 0
+        && window.location.href.indexOf("http://www.asa.org.uk/make-a-complaint") != 0) {
+        return;
+    }
 
-    var desc = document.getElementById("phmain_0_phtop_1_txtDescription");
-    if (desc) {
-        desc.style.width = "700px";
-        desc.style.height = "700px";
+    // Heuristic submission detection: if the page now reads as a thank-you
+    // page, mark the complaint as submitted and stop.
+    var bodyText = (document.body && document.body.innerText) || "";
+    if (/thank\s*you[\s\S]{0,60}complaint/i.test(bodyText) && bodyText.length < 4000) {
+        FishBarrel.ComplaintSent("ASA");
+        return;
     }
 
     askIfComplaintReady("ASA", function (response) {
         if (!response.settingsAttached || !response.body) return;
-        if (response.CurrentComplaintFilled) {
-            ASAAuth.AttachSubmitButton();
-            return;
+
+        ASAAuth.TryFill(response);
+
+        // The form swaps in new step HTML in place. Re-attempt fills whenever
+        // the DOM mutates so step 2's address fields, step N's description box,
+        // etc. all get populated as they appear.
+        if (!ASAAuth._observing) {
+            ASAAuth._observing = true;
+            var pending = null;
+            var observer = new MutationObserver(function () {
+                if (pending) return;
+                pending = window.setTimeout(function () {
+                    pending = null;
+                    ASAAuth.TryFill(response);
+                }, 80);
+            });
+            observer.observe(document.body, { childList: true, subtree: true });
         }
-
-        var settings = response.settings;
-
-        if (window.location.href.indexOf(ASAForm1Url + "1.") == 0) {
-            FishBarrel.FillElement("phmain_0_phtop_1_rblComplaintTypes_0", true);
-            var nxt = document.getElementById("phmain_0_phtop_1_btnNxt");
-            if (nxt) nxt.click();
-        }
-
-        if (window.location.href.indexOf(ASAForm1Url + "2.") == 0) {
-            FishBarrel.FillElement("phmain_0_phtop_1_ddlTitle", settings.title);
-            if (settings.firstName && settings.firstName.length > 0) {
-                FishBarrel.FillElement("phmain_0_phtop_1_txtInitials", settings.firstName.substring(0, 1));
-            }
-            FishBarrel.FillElement("phmain_0_phtop_1_txtLastName", settings.surname);
-            FishBarrel.FillElement("rbtnUKResident", true);
-            FishBarrel.FillElement("phmain_0_phtop_1_txtPostCode", settings.postcode);
-            FishBarrel.FillElement("phmain_0_phtop_1_txtAddress1", settings.address);
-            FishBarrel.FillElement("phmain_0_phtop_1_txtTown", settings.city);
-            FishBarrel.FillElement("phmain_0_phtop_1_txtCounty", settings.county);
-            FishBarrel.FillElement("phmain_0_phtop_1_txtTelephoneNumber", settings.phonenumber);
-            FishBarrel.FillElement("phmain_0_phtop_1_txtEmailAddress", settings.email);
-            FishBarrel.FillElement("phmain_0_phtop_1_chkContactByPost", true);
-            var n2 = document.getElementById("phmain_0_phtop_1_btnNxt");
-            if (n2) n2.click();
-        }
-
-        if (window.location.href.indexOf(ASAForm1Url + "3.") == 0) {
-            function FillStage2P1Inputs() {
-                var sub = document.getElementById("phmain_0_phtop_1_ddlAdvertisementSubTypes");
-                if (sub) {
-                    sub.selectedIndex = 1;
-                    FishBarrel.FillElement("phmain_0_phtop_1_rblIdoNotHaveACopy", true);
-                    FishBarrel.FillElement("phmain_0_phtop_1_txtWebUrl", "");
-                    var n = document.getElementById("phmain_0_phtop_1_btnNxt");
-                    if (n) n.click();
-                } else {
-                    window.setTimeout(FillStage2P1Inputs, 100);
-                }
-            }
-            if (document.getElementById("phmain_0_phtop_1_ddlAdvertisementType")) {
-                FishBarrel.FillElement("phmain_0_phtop_1_ddlAdvertisementType", "Internet");
-            }
-            FishBarrel.FillElement("phmain_0_phtop_1_rblIdoNotHaveACopy", true);
-            FishBarrel.FillElement("phmain_0_phtop_1_txtWebUrl", "");
-            window.setTimeout(FillStage2P1Inputs, 100);
-        }
-
-        if (window.location.href.indexOf(ASAForm1Url + "4.") == 0) {
-            var d = new Date();
-            FishBarrel.FillElement("phmain_0_phtop_1_txtWhere", response.WebsiteUrl);
-            FishBarrel.FillElement("phmain_0_phtop_1_txtWhen", d.getDate() + "/" + (d.getMonth() + 1) + "/" + d.getFullYear());
-            FishBarrel.FillElement("phmain_0_phtop_1_txtWhat", "Alternative Medicine");
-            FishBarrel.FillElement("phmain_0_phtop_1_txtWho", response.organisationName);
-            var n3 = document.getElementById("phmain_0_phtop_1_btnNxt");
-            if (n3) n3.click();
-        }
-
-        if (window.location.href.indexOf(ASAForm1Url + "5.") == 0) {
-            FishBarrel.FillElement("phmain_0_phtop_1_txtDescription", response.body);
-            var n4 = document.getElementById("phmain_0_phtop_1_btnNxt");
-            if (n4) n4.click();
-            chrome.runtime.sendMessage({ type: "setComplaintFilled" });
-            alert("All 4 steps of this form have been filled in for you.\r\n\r\nYou may now review these pages before submitting your complaint using the button at the bottom of this page.");
-        }
-
-        ASAAuth.AttachSubmitButton();
     });
+};
+
+// Walk through every field FishBarrel knows how to populate. Each call is a
+// no-op for fields not currently in the DOM, so it's safe to invoke repeatedly
+// as the form progresses through steps.
+ASAAuth.TryFill = function (response) {
+    var settings = response.settings || {};
+
+    // Mark the complainant as a member of the public.
+    FishBarrel.SelectRadioByValue("about_the_complaint", ASAAuth.PUBLIC_COMPLAINT_GUID);
+
+    // Contact details. Names are best-guesses based on the JS bundle's
+    // references and ASA's CFML field-naming conventions; we try a handful of
+    // candidates per field so a small rename on ASA's side doesn't break us.
+    FishBarrel.FillFirstMatch(["title", "salutation"], settings.title);
+    FishBarrel.FillFirstMatch(["first_name", "firstname", "fname", "given_name"], settings.firstName);
+    FishBarrel.FillFirstMatch(["last_name", "surname", "lname", "family_name"], settings.surname);
+    FishBarrel.FillFirstMatch(["address_1", "address1", "address", "street", "street_address"], settings.address);
+    FishBarrel.FillFirstMatch(["town", "city"], settings.city);
+    FishBarrel.FillFirstMatch(["county", "region", "state"], settings.county);
+    FishBarrel.FillFirstMatch(["postcode", "post_code", "zip", "zipcode"], settings.postcode);
+    FishBarrel.FillFirstMatch(["country"], "United Kingdom");
+    FishBarrel.FillFirstMatch(["telephone", "phone", "phone_number", "telephone_number"], settings.phonenumber);
+    FishBarrel.FillFirstMatch(["email", "email_address"], settings.email);
+    FishBarrel.FillFirstMatch(["confirm_email", "email_address_confirm", "retype_email"], settings.email);
+
+    // Where the ad was seen.
+    FishBarrel.FillFirstMatch(["advert_url", "advertisement_url", "url", "url_seen", "where_seen"], response.WebsiteUrl);
+
+    // Advertiser / organisation. ASA also asks for a product description.
+    FishBarrel.FillFirstMatch(["advertiser", "advertiser_name", "company", "company_name", "organisation", "organization"], response.organisationName);
+    FishBarrel.FillFirstMatch(["product", "product_description", "product_service", "what"], "Alternative Medicine");
+
+    // The complaint body. Try several plausible field names — ASA's current
+    // form names this field somewhere in the "details of complaint" step.
+    FishBarrel.FillFirstMatch(["complaint", "complaint_details", "complaint_description", "description", "details", "complaint_text", "your_complaint"], response.body);
+
+    // Mark the in-progress complaint as filled so the popup state reflects it.
+    chrome.runtime.sendMessage({ type: "setComplaintFilled" });
 };
 Authorities[ASAAuth.Key] = ASAAuth;
 

@@ -126,7 +126,7 @@ async function ComposeComplaint(key) {
     }
 
     if (key == "ASA") {
-        alert("Due to problems with the ASA, you may need to click 'Next' to move between some of the form pages.");
+        alert("The ASA's complaint form walks you through several steps on a single page. FishBarrel will fill in fields it recognises on each step — please review each step before clicking Continue, and pick the advertisement type and topic yourself (FishBarrel can't guess those).");
     }
     if (key == "CanadianASC") {
         alert("Due to a problem with the new ASC complaint form, you will need to click through the 'next' buttons on the form.");
