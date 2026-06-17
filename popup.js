@@ -32,9 +32,34 @@ document.addEventListener('DOMContentLoaded', async function () {
     }
     if (!state.groupExists) reviewEl.classList.add("disabled");
 
-    if (spiderActive) {
+    function renderSpiderProgress(s) {
+        if (!s || !s.active) {
+            crawlEl.classList.remove("disabled");
+            if (crawlDesc) crawlDesc.innerText = "Auto-scan every page on this domain";
+            statusPill.innerText = "Capturing";
+            return false;
+        }
         crawlEl.classList.add("disabled");
-        if (crawlDesc) crawlDesc.innerText = "Crawling " + state.spider.rootHost + " (" + state.spider.pagesScanned + "/" + state.spider.maxPages + ", " + state.spider.queueRemaining + " queued)";
+        var total = s.pagesScanned + s.queueRemaining;
+        statusPill.innerText = "Spidering " + s.pagesScanned + "/" + total;
+        if (crawlDesc) {
+            crawlDesc.innerText = "Crawling " + s.rootHost + " — " + s.pagesScanned + "/" + total + " (" + s.queueRemaining + " queued)";
+        }
+        return true;
+    }
+
+    if (spiderActive) {
+        renderSpiderProgress(state.spider);
+
+        // Poll the background every 1.5 s so the numbers stay live while the
+        // popup is open. The popup process is short-lived (closes when the
+        // user clicks away) so the interval naturally dies with it.
+        var pollTimer = setInterval(async function () {
+            var s = await sendBg({ type: "getState" });
+            if (!s) return;
+            var stillActive = renderSpiderProgress(s.spider);
+            if (!stillActive) clearInterval(pollTimer);
+        }, 1500);
     }
 
     if (!state.currentUrl || state.currentUrl.length < 7) {

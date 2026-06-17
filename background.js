@@ -146,6 +146,8 @@ async function spiderStart(rootUrl) {
 
     console.log("[FishBarrel] spider starting from", normalised, "(host:", Spider.rootHost + ", max:", Spider.maxPages + " pages)");
 
+    updateSpiderBadge();
+
     // Run async — don't make spiderStart's caller wait for the whole crawl.
     spiderLoop();
 
@@ -173,6 +175,8 @@ function spiderStop() {
     var totalClaims = (ClaimGroup.Current && ClaimGroup.Current.claims) ? ClaimGroup.Current.claims.length : 0;
     var added = totalClaims - Spider.claimsAtStart;
     console.log("[FishBarrel] spider stopped — pages scanned:", Spider.pagesScanned + ", claims added during crawl:", added + ", total claims:", totalClaims);
+
+    updateSpiderBadge();
 }
 
 async function spiderLoop() {
@@ -242,6 +246,8 @@ async function spiderVisit(url) {
         "skippedAssets=" + assetCount,
         "queueLen=" + Spider.queue.length);
 
+    updateSpiderBadge();
+
     if (Spider.currentTabId === tab.id) {
         Spider.currentTabId = null;
         chrome.tabs.remove(tab.id, function () { void chrome.runtime.lastError; });
@@ -278,6 +284,24 @@ function persistState() {
 
 function updateIcon() {
     chrome.action.setIcon({ path: ClaimGroup.IsCollecting ? "icon-active.png" : "icon.png" });
+}
+
+// Toolbar badge showing live spider progress. Format: "scanned/total" where
+// total = scanned + queued (i.e. every URL we've discovered so far). Both
+// numbers grow as new same-host links are found on each visited page.
+function updateSpiderBadge() {
+    try {
+        if (Spider.active) {
+            var total = Spider.pagesScanned + Spider.queue.length;
+            chrome.action.setBadgeBackgroundColor({ color: "#F4B400" });
+            if (chrome.action.setBadgeTextColor) {
+                chrome.action.setBadgeTextColor({ color: "#1F2937" });
+            }
+            chrome.action.setBadgeText({ text: Spider.pagesScanned + "/" + total });
+        } else {
+            chrome.action.setBadgeText({ text: "" });
+        }
+    } catch (e) { /* badge APIs may be unavailable in older Chrome */ }
 }
 
 // ----- Capture controls ------------------------------------------------------
