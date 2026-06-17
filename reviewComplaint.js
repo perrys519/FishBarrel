@@ -134,7 +134,7 @@ async function ComposeComplaint(key) {
 
     var result = await sendBg({ type: "composeComplaint", key: key });
     if (result && result.error == "settings-incomplete") {
-        alert("You must complete the options page before submitting a complaint. Right-click on the FishBarrel icon and click options.");
+        alert("You must complete the options page before submitting a complaint. Click the FishBarrel icon and choose Options.");
     } else if (result && result.error == "no-template") {
         alert("Please go to the settings page to\r\ngenerate a template for this authority.");
     }
