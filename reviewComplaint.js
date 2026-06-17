@@ -4,6 +4,14 @@ var CurrentClaimGroup = null;
 var CurrentCountry = "UK";
 
 async function UpdateBackgroundInfo(claimId, info) {
+    if (CurrentClaimGroup && CurrentClaimGroup.claims) {
+        for (var i = 0; i < CurrentClaimGroup.claims.length; i++) {
+            if (CurrentClaimGroup.claims[i].id == claimId) {
+                CurrentClaimGroup.claims[i].backgroundInfo = info;
+                break;
+            }
+        }
+    }
     await sendBg({ type: "updateBackgroundInfo", claimId: claimId, info: info });
 }
 
@@ -13,6 +21,7 @@ async function DeleteClaim(claimId) {
 }
 
 async function UpdateOrgName(name) {
+    if (CurrentClaimGroup) CurrentClaimGroup._CompanyName = name;
     await sendBg({ type: "updateOrgName", name: name });
 }
 
