@@ -530,6 +530,41 @@ FishBarrel.ComplaintSent = function (authority) {
 // chrome.scripting.executeScript with allFrames: true — that reaches
 // cross-origin iframes whereas a single sendMessage to this content
 // script wouldn't.)
+// ----- Automation postMessage bridge -----------------------------------------
+// Lets the audit harness control the extension from any http(s) page by
+// posting messages that this content script relays to the background. The
+// extension page (automation.html) can't be debugger-attached by remote
+// automation, so we route through a regular page instead.
+//
+// Protocol — from any http(s) page:
+//   const id = "..."; // unique per call
+//   window.postMessage({ __fishbarrel_test: true, id, message: {type: "getState"} }, "*");
+//   // listen for window message back: { __fishbarrel_test_response: true, id, response }
+//
+// Security note: any page could trigger this. For a Web Store release this
+// branch should be gated by a build flag or removed. For unpacked dev use,
+// the convenience outweighs the risk.
+window.addEventListener("message", function (e) {
+    try {
+        if (e.source !== window) return;
+        var data = e.data;
+        if (!data || data.__fishbarrel_test !== true) return;
+        var id = data.id;
+        var msg = data.message;
+        chrome.runtime.sendMessage(msg, function (response) {
+            void chrome.runtime.lastError;
+            window.postMessage({
+                __fishbarrel_test_response: true,
+                id: id,
+                response: response,
+                lastError: chrome.runtime.lastError ? String(chrome.runtime.lastError.message || chrome.runtime.lastError) : null
+            }, "*");
+        });
+    } catch (err) {
+        // never throw out of a postMessage listener
+    }
+}, false);
+
 chrome.runtime.onMessage.addListener(function (request, sender, sendResponse) {
     if (request && request.type == "snapshotForm") {
         // Automation harness wants the form structure on this page. Lazily
