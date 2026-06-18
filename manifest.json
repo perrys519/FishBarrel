@@ -34,7 +34,7 @@
   ],
   "web_accessible_resources": [
     {
-      "resources": ["duck.png"],
+      "resources": ["duck.png", "automation.html", "automation.js"],
       "matches": ["<all_urls>"]
     }
   ]

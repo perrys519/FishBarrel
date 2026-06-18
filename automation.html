@@ -1,0 +1,66 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <title>FishBarrel Automation Console</title>
+  <link rel="stylesheet" href="style.css" type="text/css" />
+  <script src="authorities.js"></script>
+  <script src="include.js"></script>
+  <script src="ai.js"></script>
+  <script src="automation.js"></script>
+</head>
+<body>
+
+<div class="fb-page">
+
+<header class="fb-header">
+  <img class="fb-logo" src="duck.png" alt="" />
+  <div>
+    <div class="fb-title">FishBarrel automation console</div>
+    <div class="fb-tagline">Programmatic control surface for the authority-wiring audit. <span id="aut-status-pill" class="fb-status-pill">Idle</span></div>
+  </div>
+</header>
+
+<section class="fb-card">
+  <h2>Status</h2>
+  <p class="muted">This page exposes <code>window.FBControl</code> with helpers that drive the extension via <code>chrome.runtime.sendMessage</code>. An audit harness (typically Claude) opens this page in a tab and invokes the methods from DevTools.</p>
+  <p>
+    Extension id: <code id="aut-ext-id">checking&hellip;</code><br />
+    Identity mode: <strong id="aut-identity-mode">real (untouched)</strong><br />
+    Stored backup of real settings: <strong id="aut-backup-state">none</strong><br />
+    Most recent action: <span id="aut-last-action" class="muted">&mdash;</span>
+  </p>
+  <p>
+    <button id="aut-restore" class="fb-btn-danger" style="display:none;">Restore real settings now</button>
+    <button id="aut-show-state">Show state</button>
+  </p>
+  <pre id="aut-state-dump" style="display:none;background:var(--fb-surface-muted);padding:12px;border-radius:8px;font-size:12px;max-height:400px;overflow:auto;"></pre>
+</section>
+
+<section class="fb-card">
+  <h2>Synthetic test identity</h2>
+  <p class="muted">When the audit harness swaps real settings for synthetic ones, this is what goes into <code>chrome.storage.local</code>:</p>
+  <pre id="aut-synthetic-dump" style="background:var(--fb-surface-muted);padding:12px;border-radius:8px;font-size:12px;"></pre>
+</section>
+
+<section class="fb-card">
+  <h2>Available methods (window.FBControl)</h2>
+  <ul style="font-family:var(--fb-mono,monospace);font-size:12.5px;">
+    <li><code>getExtensionId()</code> &mdash; returns <code>chrome.runtime.id</code></li>
+    <li><code>getStatus()</code> &mdash; full state object</li>
+    <li><code>captureRealSettings()</code> &mdash; reads + stashes current chrome.storage.local</li>
+    <li><code>setSyntheticIdentity()</code> &mdash; writes test identity to storage</li>
+    <li><code>restoreRealSettings()</code> &mdash; writes stashed backup back</li>
+    <li><code>seedClaimGroup({ company, claims, url })</code> &mdash; init capture + add claims</li>
+    <li><code>composeFor(authorityKey)</code> &mdash; resolves to <code>{tabId, url}</code></li>
+    <li><code>snapshotForm(tabId)</code> &mdash; FormRecorder JSON for that tab</li>
+    <li><code>readFieldValues(tabId, names)</code> &mdash; current values of named fields</li>
+    <li><code>listAuthorities()</code> &mdash; keys + Country + Name + URL guess</li>
+    <li><code>endAndClear()</code> &mdash; endCapture + clearCapture</li>
+  </ul>
+</section>
+
+</div>
+
+</body>
+</html>

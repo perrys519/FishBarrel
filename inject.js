@@ -201,6 +201,7 @@ FishBarrel.FormRecorder = {
     enabled: false,
     snapshotCount: 0,
     lastSnapshotSig: null,
+    lastSnapshot: null,
 
     init: function (tag) {
         if (this.enabled) return;
@@ -267,12 +268,27 @@ FishBarrel.FormRecorder = {
             fields: fields,
             buttons: buttons
         };
+        this.lastSnapshot = payload;
 
         console.groupCollapsed("[FishBarrel] SNAPSHOT #" + this.snapshotCount + " — " + fields.length + " fields, " + buttons.length + " buttons");
         console.log("Copy-paste-friendly JSON:");
         console.log(JSON.stringify(payload, null, 2));
         console.log("Live objects (expand to inspect):", payload);
         console.groupEnd();
+    },
+
+    // Programmatic accessor used by the automation harness via the
+    // snapshotForm background message. Forces a fresh snapshot first so
+    // dynamic content (Wix-style hydration) is reflected even if the
+    // MutationObserver hasn't fired yet. The console-dedup signature is
+    // bypassed so we always have a result even if nothing has changed.
+    getLatestSnapshot: function () {
+        // Force a fresh capture by clearing the dedup key. If nothing
+        // actually changed, snapshot() will just re-store the same payload
+        // — but we still get a payload.
+        this.lastSnapshotSig = null;
+        this.snapshot();
+        return this.lastSnapshot;
     },
 
     describeField: function (el) {
@@ -515,6 +531,25 @@ FishBarrel.ComplaintSent = function (authority) {
 // cross-origin iframes whereas a single sendMessage to this content
 // script wouldn't.)
 chrome.runtime.onMessage.addListener(function (request, sender, sendResponse) {
+    if (request && request.type == "snapshotForm") {
+        // Automation harness wants the form structure on this page. Lazily
+        // initialise the FormRecorder if it hasn't been turned on (so we
+        // don't require an authority's URL match to read fields).
+        try {
+            if (!FishBarrel.FormRecorder.enabled) {
+                // Tag the recorder so console output is identifiable; the
+                // observer + change-listener machinery is harmless to keep
+                // running until the tab closes.
+                FishBarrel.FormRecorder.init("automation");
+            }
+            var snap = FishBarrel.FormRecorder.getLatestSnapshot();
+            sendResponse({ snapshot: snap });
+        } catch (e) {
+            sendResponse({ error: String(e && e.message || e) });
+        }
+        return;
+    }
+
     if (request && request.type == "unhighlightAll") {
         FishBarrel.UnhighlightAll();
         // Capture is being turned off — tear down the AI MutationObserver

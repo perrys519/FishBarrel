@@ -669,6 +669,59 @@ async function handleMessage(request, sender) {
             return await FBStorage.getLocal(null);
         }
 
+        // --- Automation harness support ----------------------------------
+        // These three messages are only used by the in-extension automation
+        // page (automation.html). The harness reads the user's real settings,
+        // backs them up in memory, swaps in a synthetic test identity, runs
+        // its audit, then writes the backup straight back. No persistence on
+        // the SW side — the backup payload always travels with the request.
+
+        case "setSyntheticSettings": {
+            // request.settings is a flat key/value object to merge into
+            // chrome.storage.local. Existing keys not in the payload are
+            // left alone, so the user's complaint templates survive a run.
+            if (!request.settings || typeof request.settings !== "object") {
+                return { error: "bad-payload" };
+            }
+            await FBStorage.setLocal(request.settings);
+            return { ok: true };
+        }
+
+        case "restoreSettings": {
+            // request.backup is the verbatim object the harness captured via
+            // getSettings before the audit. We clear synthetic-only keys
+            // (anything in the backup is the source of truth) and write the
+            // backup. Used by both the manual Restore button and the page's
+            // beforeunload handler.
+            if (!request.backup || typeof request.backup !== "object") {
+                return { error: "bad-payload" };
+            }
+            // Clear first so synthetic-only keys (none today, but if added
+            // later) are removed before we re-write the real values.
+            if (request.clearFirst) {
+                await FBStorage.clearLocal();
+            }
+            await FBStorage.setLocal(request.backup);
+            return { ok: true };
+        }
+
+        case "snapshotForm": {
+            // Proxy the form-snapshot request to a specific tab's content
+            // script. Returns the FormRecorder JSON or { error }.
+            if (typeof request.tabId !== "number") {
+                return { error: "missing-tabId" };
+            }
+            return await new Promise(function (resolve) {
+                chrome.tabs.sendMessage(request.tabId, { type: "snapshotForm" }, function (response) {
+                    if (chrome.runtime.lastError) {
+                        resolve({ error: chrome.runtime.lastError.message || "sendMessage-failed" });
+                        return;
+                    }
+                    resolve(response || { error: "no-response" });
+                });
+            });
+        }
+
         case "getNextClaimForUrl": {
             // Used by content script to walk through claims for the current URL.
             var startIndex = request.claimIndex || 0;
