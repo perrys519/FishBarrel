@@ -186,7 +186,44 @@ async function Init() {
     }
 
     await restore_options();
+    await hideEmptyCountries();
     ShowTabsForSelectedCountry(true);
+}
+
+// Hide Country radios for any country whose every authority is marked
+// broken. If the user's currently saved country is one of those, switch
+// them to the first still-active country and persist it. Keyed off
+// authority.broken so this self-updates as authorities get rewired.
+async function hideEmptyCountries() {
+    var working = {};
+    for (var k in Authorities) {
+        var a = Authorities[k];
+        if (a.Country && !a.broken) working[a.Country] = true;
+    }
+    var workingList = Object.keys(working).sort();
+
+    var countryInputs = document.querySelectorAll('input[name="Country"]');
+    var firstAvailable = null;
+    for (var i = 0; i < countryInputs.length; i++) {
+        var input = countryInputs[i];
+        var lbl = input.closest('label') || input.parentElement;
+        if (working[input.value]) {
+            if (!firstAvailable) firstAvailable = input.value;
+            if (lbl) lbl.style.display = "";
+        } else {
+            if (lbl) lbl.style.display = "none";
+        }
+    }
+
+    // If the saved country no longer has any working authority, move the
+    // user to the first available country and save.
+    var current = SettingsCache["Country"];
+    if (current && !working[current] && firstAvailable) {
+        SettingsCache["Country"] = firstAvailable;
+        await FBStorage.setLocal({ Country: firstAvailable });
+        var radio = document.querySelector('input[name="Country"][value="' + firstAvailable.replace(/"/g, '\\"') + '"]');
+        if (radio) radio.checked = true;
+    }
 }
 
 async function ResetTemplate(templateType) {

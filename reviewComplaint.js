@@ -94,22 +94,30 @@ function DisplayClaimsForm() {
         }
     }
 
+    // Broken authorities are hidden entirely — they used to render with an
+    // "(out of date)" suffix but the user can't action them anyway, so the
+    // greyed buttons were just noise. If a country has no working authority
+    // at all, the Settings page now prevents its selection (see settings.js).
     var bHtml = "";
+    var workingForCountry = 0;
     for (var key in Authorities) {
-        if (Authorities[key].Country == CurrentCountry) {
-            var auth = Authorities[key];
-            var brokenSuffix = auth.broken ? " <small style='font-weight:400;'>(out of date)</small>" : "";
-            var brokenAttrs = auth.broken
-                ? " data-broken='1' title='" + escapeHtml(auth.brokenReason || "Wiring out of date") + "' style='opacity:0.6;background:var(--fb-surface-muted);'"
-                : "";
-            bHtml += "<button id='ComposeComplaint_" + escapeHtml(key) + "' data-authority-key='" + escapeHtml(key) + "'" + brokenAttrs + ">" + escapeHtml(auth.Name) + brokenSuffix + "</button>";
-        }
+        var auth = Authorities[key];
+        if (auth.Country != CurrentCountry) continue;
+        if (auth.broken) continue;
+        workingForCountry++;
+        bHtml += "<button id='ComposeComplaint_" + escapeHtml(key) + "' data-authority-key='" + escapeHtml(key) + "'>" + escapeHtml(auth.Name) + "</button>";
+    }
+    if (workingForCountry === 0) {
+        bHtml = "<p class='muted' style='margin:0;'>FishBarrel's wiring for every regulator in this country is out of date. Open <strong>Options</strong> to pick a different country, or file directly with the regulator's website.</p>";
     }
     document.getElementById("StartComplaintButtons").innerHTML = bHtml;
 
     for (var key in Authorities) {
-        if (Authorities[key].Country == CurrentCountry) {
-            document.getElementById("ComposeComplaint_" + key).addEventListener('click', function () {
+        if (Authorities[key].Country != CurrentCountry) continue;
+        if (Authorities[key].broken) continue;
+        var btn = document.getElementById("ComposeComplaint_" + key);
+        if (btn) {
+            btn.addEventListener('click', function () {
                 ComposeComplaint(this.getAttribute("data-authority-key"));
             });
         }
