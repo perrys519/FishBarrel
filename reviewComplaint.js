@@ -97,7 +97,12 @@ function DisplayClaimsForm() {
     var bHtml = "";
     for (var key in Authorities) {
         if (Authorities[key].Country == CurrentCountry) {
-            bHtml += "<button id='ComposeComplaint_" + escapeHtml(key) + "' data-authority-key='" + escapeHtml(key) + "'>" + escapeHtml(Authorities[key].Name) + "</button>";
+            var auth = Authorities[key];
+            var brokenSuffix = auth.broken ? " <small style='font-weight:400;'>(out of date)</small>" : "";
+            var brokenAttrs = auth.broken
+                ? " data-broken='1' title='" + escapeHtml(auth.brokenReason || "Wiring out of date") + "' style='opacity:0.6;background:var(--fb-surface-muted);'"
+                : "";
+            bHtml += "<button id='ComposeComplaint_" + escapeHtml(key) + "' data-authority-key='" + escapeHtml(key) + "'" + brokenAttrs + ">" + escapeHtml(auth.Name) + brokenSuffix + "</button>";
         }
     }
     document.getElementById("StartComplaintButtons").innerHTML = bHtml;
@@ -114,6 +119,17 @@ function DisplayClaimsForm() {
 async function ComposeComplaint(key) {
     var auth = Authorities[key];
     if (!auth) return;
+
+    // Broken authorities short-circuit: tell the user what's up, then let the
+    // background's stub open the regulator's help page.
+    if (auth.broken) {
+        alert("FishBarrel's wiring for " + auth.Name + " is out of date.\n\n"
+            + (auth.brokenReason || "")
+            + "\n\nThe regulator's contact / complaints landing page will open in a new tab — please file manually from there.");
+        await sendBg({ type: "composeComplaint", key: key });
+        return;
+    }
+
     var claims = (CurrentClaimGroup && CurrentClaimGroup.claims) || [];
 
     if (auth.ForceJustification == true) {

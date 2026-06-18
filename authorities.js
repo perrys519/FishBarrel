@@ -26,6 +26,26 @@ function askIfComplaintReady(authority, callback) {
     });
 }
 
+// Mark an authority as out-of-date. Replaces its ComposeComplaint with a stub
+// that opens the regulator's main / help page so the user can find the right
+// complaint route manually, and leaves AutoFillForm as a no-op so an
+// accidentally-loaded match doesn't try to fill anything. The Review page UI
+// reads .broken to render the button as disabled with an "(out of date)"
+// suffix.
+//
+// Stubs run in the service-worker context (no DOM, no alert), so the entire
+// user feedback is the new tab opening on the help URL. Pair with the
+// reviewComplaint UI's broken-button styling so the user isn't surprised.
+function markBroken(authority, reason, helpUrl) {
+    authority.broken = true;
+    authority.brokenReason = reason;
+    authority.helpUrl = helpUrl;
+    authority.ComposeComplaint = function () {
+        try { chrome.tabs.create({ url: helpUrl }); } catch (e) { /* ignore */ }
+    };
+    authority.AutoFillForm = function () { /* no longer wired */ };
+}
+
 /*
 ##################################################################
 VZHH / Verbraucherzentrale Hamburg
@@ -836,3 +856,67 @@ function textDate(date) {
     var year = date.getFullYear();
     return date.getDate() + " " + months[date.getMonth()] + ", " + year;
 }
+
+/*
+##################################################################
+Broken-authority overrides (post-2026 audit)
+##################################################################
+
+Every authority below was confirmed broken by the automated audit on
+2026-06-18: the configured ComposeComplaint URL either returns a page
+with no form (regulator restructured their site), redirects to a
+search / contact page, or relies on a discontinued upstream service
+(Gmail's basic-HTML "?v=b" compose URL, retired by Google in 2024).
+
+The original per-authority blocks above are kept so a future revival
+can lift their field-mapping knowledge. markBroken() runs AFTER each
+authority's normal definition, replacing its ComposeComplaint and
+AutoFillForm so clicking the button just opens the regulator's
+top-level / contact page in a new tab.
+
+ASA is intentionally NOT in this list — its 2026 rewrite still works.
+*/
+
+markBroken(MHRAAuth,
+    "MHRA's complaint form has moved off mhra.gov.uk. Use the gov.uk 'report a problem with a medicine or medical device' flow.",
+    "https://www.gov.uk/report-problem-medicine-medical-device");
+
+markBroken(ACCCAuth,
+    "ACCC's original complaint URL redirects to a search/contact page. Use the ACCC consumer complaints flow.",
+    "https://www.accc.gov.au/consumers/problem-with-a-product-or-service");
+
+markBroken(CRPAuth,
+    "The Complaints Resolution Panel was dissolved; advertising complaints in Australia now go through the TGA's Advertising Hub.",
+    "https://www.tga.gov.au/safety/complaints/lodging-advertising-complaint");
+
+markBroken(FDAAuth,
+    "FDA's 'buy online' complaint form is no longer hosted; the catch-all 'Report a Problem' page is the current route.",
+    "https://www.fda.gov/safety/report-problem-fda");
+
+markBroken(CanadianCompBureau,
+    "The Competition Bureau's old complaint URL no longer presents a form. Use the Bureau's current report-a-problem page.",
+    "https://competitionbureau.gc.ca/eic/site/cb-bc.nsf/eng/04604.html");
+
+markBroken(CanadianASC,
+    "Ad Standards Canada moved from adstandards.com to adstandards.ca and the eComplaints form was rebuilt; the old wiring no longer matches.",
+    "https://adstandards.ca/complaints/submit-a-complaint/");
+
+markBroken(NZASAAuth,
+    "The NZ ASA's complaint_form.php URL no longer presents a form; use the rebuilt complaints flow on the main site.",
+    "https://www.asa.co.nz/complaints/make-a-complaint/");
+
+markBroken(ASAIAuth,
+    "ASAI rebranded as Advertising Standards on adstandards.ie and the old complain.asp form is gone.",
+    "https://adstandards.ie/make-a-complaint/");
+
+markBroken(SRCAuth,
+    "Stichting Reclame Code's old default.asp form page returns no fields. Use the current complaints flow on reclamecode.nl.",
+    "https://www.reclamecode.nl/consumenten/klacht-indienen/");
+
+markBroken(VZHHAuth,
+    "Used the legacy Gmail basic-HTML compose URL, which Google discontinued in 2024. Contact Verbraucherzentrale Hamburg directly.",
+    "https://www.vzhh.de/themen/markt-recht");
+
+markBroken(DKMAAuth,
+    "Used the legacy Gmail basic-HTML compose URL, which Google discontinued in 2024. The Danish Medicines Agency (Lægemiddelstyrelsen) now uses a web form.",
+    "https://laegemiddelstyrelsen.dk/en/contact/");

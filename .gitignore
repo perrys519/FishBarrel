@@ -13,3 +13,7 @@ Thumbs.db
 
 # Node (in case anything is added later)
 node_modules/
+
+# Per-authority audit screenshots (referenced from AUDIT-REPORT.md but
+# kept out of the repo because they're large binary diffs).
+audit-screenshots/
