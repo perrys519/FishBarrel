@@ -1,162 +1,152 @@
 # FishBarrel — Authority wiring audit
 
-*Audit run: 2026-06-18, against the live regulator websites via the new
-in-extension automation harness (`automation.html` + the `postMessage`
+*Initial audit: 2026-06-18. Rewiring pass: same day. All work driven by the
+in-extension automation harness (`automation.html` + the postMessage
 bridge in `inject.js`). Synthetic test identity used throughout; no real
 complaints were submitted.*
 
 ## Headline
 
-**1 of 12 regulator handlers still wired correctly.** All others have
-been marked `broken: true` and will now open the regulator's contact /
-complaints landing page in a new tab when their button is clicked. The
-Review page renders broken buttons with an *(out of date)* suffix and a
-greyed-out style.
+**3 of 12 regulator handlers wired correctly after this pass.**
 
 | Status | Count | Authorities |
 |---|---|---|
-| **WORKING** | 1 | ASA |
-| **BROKEN** — page exists, form has been removed | 7 | MHRA, ACCC, CRP, FDA, CanadianCompBureau, NZASA, SRC |
-| **BROKEN** — site moved, original URL dead/redirected | 2 | CanadianASC, ASAI |
-| **BROKEN** — relied on Gmail basic-HTML compose (retired by Google 2024) | 2 | VZHH, DKMA |
+| **WORKING** (post-2026 wiring) | 3 | ASA, NZASA, ASAI |
+| **BROKEN** — out-of-date wiring, helpUrl updated to current best landing/form page | 9 | MHRA, ACCC, CRP, FDA, CanadianCompBureau, CanadianASC, SRC, VZHH, DKMA |
 
-## Per-authority detail
+The 9 broken handlers all run their `markBroken` stub on click —
+opens the regulator's current landing or form page in a new tab so the
+user can file manually. The Review-page button shows *"(out of date)"*
+with a greyed-out tint.
 
-### ASA (UK) — WORKING
+## What works
 
-- Final URL: `https://www.asa.org.uk/make-a-complaint.html`
-- 37 fields across 2 forms, **13 filled** by autofill on first load.
-- Status pill: `FORM_LOADED`.
-- The 2026 rewrite (commits `2483dfb` → `d0f19e5` → `255e132`) is doing
-  its job. No change needed.
+### ASA (UK) — already modernised in earlier 2026 work
 
-### MHRA (UK) — BROKEN, form removed
+- URL: `https://www.asa.org.uk/make-a-complaint.html`
+- 37 fields, 13 filled by autofill on initial scan.
 
-- Final URL: `https://www.mhra.gov.uk/Howweregulate/Medicines/Advertisingofmedicines/Advertisinginvestigations/Advertisingcomplaintform/index.htm`
-- Page returned HTTP 200 but contains **0 fields, 0 buttons**.
-- MHRA's complaint flow has moved off the dedicated path; the catch-all
-  is now gov.uk's *"report a problem with a medicine or medical
-  device"* page.
-- Help URL: <https://www.gov.uk/report-problem-medicine-medical-device>
+### NZASA (New Zealand) — newly rewired
 
-### ACCC (Australia) — BROKEN, redirected
+- URL: `https://www.asa.co.nz/complaints/make-a-complaint/`
+- Form is built on Forminator (a WordPress plugin). All fields exist in
+  the DOM from page load even though the user navigates through a
+  multi-step wizard — so a single fill pass survives the wizard.
+- Mapping (semantic label → Forminator name):
+  - First Name → `name-1-first-name`
+  - Last Name → `name-1-last-name`
+  - Street → `address-1-street_address`
+  - Suburb → `address-1-address_line`
+  - City → `address-1-city`
+  - Post Code → `address-1-zip`
+  - Phone → `phone-1`
+  - Email → `email-1`
+  - Advertiser → `text-1`
+  - URL → `url-1`
+  - Complaint details → `textarea-1`
+- Verified: **11 of 11** candidate fields fill on first load. The
+  fillFields → readFieldValues round-trip confirmed every value
+  landed.
 
-- Final URL: `www.accc.gov.au/…` (full URL redacted by automation
-  output filter)
-- Original deep link redirects to a search/contact page; only 3 fields
-  (a site-search box and a *Was this page useful?* widget).
-- Help URL: <https://www.accc.gov.au/consumers/problem-with-a-product-or-service>
+### ASAI (Ireland) — newly rewired
 
-### CRP (Australia) — BROKEN, body dissolved
+- URL: `https://adstandards.ie/make-a-complaint/make-a-complaint/`
+  (ASAI rebranded as *Advertising Standards* on `adstandards.ie`.)
+- Form is Gravity Forms. Multi-step with conditional logic; field names
+  use the `input_N.M` pattern. Labels are recoverable from
+  `<label for="input_1_N_M">` so the mapping is semantic.
+- Mapping:
+  - Consent checkbox → `input_68.1` (must be `true` for the form to
+    accept submission)
+  - First → `input_63.3` / Last → `input_63.6`
+  - Street → `input_65.1`, City → `input_65.3`, County → `input_65.4`,
+    Eircode → `input_65.5`, Country → `input_65.6`
+  - Phone → `input_99`, Email → `input_100`
+  - Name of advertiser → `input_14`
+  - Product/Service → `input_15`
+  - Website URL → `input_33`
+  - Description of ad → `input_31`
+  - Reason it breaches the Code → `input_58`
+- Verified: **14 of 14** candidate fields fill on first load.
 
-- Final URL: `https://www.tgacrp.com.au/index.cfm?pageID=12`
-- Page returns HTML but has 0 form fields. The CRP itself was
-  dissolved years ago; advertising complaints in Australia now go via
-  the TGA's Advertising Hub.
-- Help URL: <https://www.tga.gov.au/safety/complaints/lodging-advertising-complaint>
+## What's still broken (and the verified helpUrls now point at current pages)
 
-### FDA (USA) — BROKEN, form replaced
+| Authority | Updated helpUrl | Why still broken |
+|---|---|---|
+| **MHRA** | <https://www.gov.uk/report-problem-medicine-medical-device> | gov.uk's report-a-problem flow generates fields per session; field names not stable across loads |
+| **ACCC** | <https://www.accc.gov.au/consumers/problem-with-a-product-or-service-you-bought> | Page is an info hub, not a single form |
+| **CRP** | <https://www.tga.gov.au/safety/report-problem/report-breach> | CRP dissolved; TGA flow uses a separate "Report a breach" form not yet mapped |
+| **FDA** | <https://www.fda.gov/safety/report-problem-fda> | Page is a router; actual report forms are per-product-category |
+| **CanadianCompBureau** | <https://competition-bureau.canada.ca/en/how-we-foster-competition/deceptive-marketing-practices/report-deceptive-marketing-practice> | Bureau moved domains; new deceptive-marketing report flow not yet mapped |
+| **CanadianASC** | <https://complaints.adstandards.ca/pub/complaints?lang=en> | Actual form URL found; it's a multi-step ASP.NET WebForm gated by an initial-category radio, would need per-step wiring |
+| **SRC** | <https://www.reclamecode.nl/klacht-indienen/klachtenformulier/> | Page is descriptive only — no form embedded, complaints go via mailto/phone |
+| **VZHH** | <https://www.vzhh.de/> | Original Gmail-compose wiring is dead; VZHH publishes contact details rather than a form |
+| **DKMA** | <https://laegemiddelstyrelsen.dk/en/contact/> | Same root cause as VZHH; DKMA also rebranded to Lægemiddelstyrelsen |
 
-- Final URL: `https://www.accessdata.fda.gov/scripts/email/oc/buyonline/buyonlineform.cfm`
-- Old "buy-online" complaint form now hosts only a search box (2
-  fields, *Submit search* button). The original form is gone.
-- Help URL: <https://www.fda.gov/safety/report-problem-fda>
+Each of these would be wireable with similar work to NZASA/ASAI, but
+needs per-regulator investigation: identify the actual form URL,
+inspect field structure, handle multi-step flows or category-specific
+forms.
 
-### CanadianCompBureau (Canada) — BROKEN, form removed
+## Automation harness summary
 
-- Final URL: `https://competitionbureau.gc.ca/eic/site/cb-bc.nsf/frm-eng/GHET-7TDNA5`
-- Note hostname moved from `www.competitionbureau.gc.ca` to
-  `competitionbureau.gc.ca`. Page returned has 0 fields, 0 buttons.
-- Help URL: <https://competitionbureau.gc.ca/eic/site/cb-bc.nsf/eng/04604.html>
+What's now permanently in the codebase (in addition to the audit harness
+from the previous pass):
 
-### CanadianASC (Canada) — BROKEN, domain moved
+- `automation.html` / `automation.js` — extension control surface with
+  `window.FBControl` (open at `chrome-extension://<id>/automation.html`).
+- `inject.js` `postMessage` bridge so any http(s) page can drive the
+  extension via the SW.
+- Generic SW message handlers (`navigateTab`, `fillFields`,
+  `readFieldValues`, `clickElement`, `harvestLinks`, `openTab`,
+  `closeTab`, `activateTab`, `waitTabComplete`, `snapshotForm`,
+  `listAuthorities`, `setSyntheticSettings`, `restoreSettings`).
+- `FishBarrel.FormRecorder.getLatestSnapshot()` for programmatic
+  access to the snapshot data.
+- `markBroken(authority, reason, helpUrl)` helper for marking
+  authorities as needing manual filing.
+- ASA-style `FillFirstMatch` candidate-list pattern that NZASA and
+  ASAI now use too — degrades gracefully if a regulator renames a
+  field.
 
-- Final URL: `https://adstandards.ca/eComplaints/#en` (moved from
-  `adstandards.com`).
-- 2 fields on the page, both unrelated to complaints (search dropdown,
-  *OPEN SEARCH BAR* button). The eComplaints form was rebuilt under a
-  different URL.
-- Help URL: <https://adstandards.ca/complaints/submit-a-complaint/>
+## Reproducing the rewire harness
 
-### NZASA (New Zealand) — BROKEN, form removed
+Any time a regulator's wiring breaks again:
 
-- Final URL: `http://www.asa.co.nz/complaint_form.php`
-- Page returns content but with 0 form fields. The complaints flow has
-  moved to a different URL on the same site.
-- Help URL: <https://www.asa.co.nz/complaints/make-a-complaint/>
+1. Open any http(s) page; the `postMessage` bridge is loaded into
+   every tab.
+2. Paste the `window.fb` helper from this commit's audit harness:
+   ```js
+   window.fb = msg => new Promise((res, rej) => {
+     const id = 'fb_' + Math.random().toString(36).slice(2);
+     const t = setTimeout(() => rej(new Error('timeout')), 30000);
+     window.addEventListener('message', function l(e) {
+       if (!e.data || !e.data.__fishbarrel_test_response || e.data.id !== id) return;
+       clearTimeout(t); window.removeEventListener('message', l); res(e.data.response);
+     });
+     window.postMessage({__fishbarrel_test: true, id, message: msg}, '*');
+   });
+   ```
+3. Capture real settings, swap for synthetic:
+   ```js
+   const real = await fb({type:'getSettings'});
+   await fb({type:'setSyntheticSettings', settings: {
+     title:'Mr', firstName:'Test', surname:'Person', address:'1 Test Street',
+     city:'Testchester', county:'Testshire', postcode:'TE1 1ST',
+     phonenumber:'+44 7700 900000', email:'test@example.com', Country:'UK'
+   }});
+   ```
+4. Open a victim tab, navigate, snapshot, build mappings, test fills,
+   verify via `readFieldValues`. Code into `authorities.js`.
+5. Restore: `await fb({type:'restoreSettings', backup: real, clearFirst: true});`
 
-### ASAI (Ireland) — BROKEN, rebranded
+## Out of scope
 
-- Final URL: `https://adstandards.ie/complain.asp` (redirected from
-  `www.asai.ie`)
-- 10 total fields but only 2 visible, and those are a site search + a
-  newsletter signup email. The body rebranded to *Advertising
-  Standards* on `adstandards.ie` and the old `complain.asp` form is
-  gone.
-- Help URL: <https://adstandards.ie/make-a-complaint/>
-
-### SRC (Netherlands) — BROKEN, form removed
-
-- Final URL: `https://www.reclamecode.nl/consument/default.asp?paginaID=73`
-- Page returns content but has 0 fields and 0 buttons. Complaint flow
-  moved elsewhere on the site.
-- Help URL: <https://www.reclamecode.nl/consumenten/klacht-indienen/>
-
-### VZHH (Germany) — BROKEN, upstream service retired
-
-- Original wiring used Gmail's basic-HTML compose URL pattern
-  (`https://mail.google.com/mail/h/?v=b&cs=wh&f=1&to=…`). Google
-  discontinued the basic-HTML view in 2024, so the URL no longer
-  opens a compose window.
-- Help URL: <https://www.vzhh.de/themen/markt-recht>
-
-### DKMA (Denmark) — BROKEN, upstream service retired
-
-- Same root cause as VZHH — relied on Gmail basic-HTML compose.
-- The Danish Medicines Agency also rebranded to *Lægemiddelstyrelsen*
-  in the intervening years and uses a web form rather than email
-  intake.
-- Help URL: <https://laegemiddelstyrelsen.dk/en/contact/>
-
-## What now lives in the code
-
-- `markBroken(authority, reason, helpUrl)` helper in
-  `authorities.js` (lines ~28–41 area). Replaces the authority's
-  `ComposeComplaint` with a stub that just opens `helpUrl` in a new
-  tab, and sets `broken: true` + `brokenReason` so the Review page can
-  reflect the state.
-- An end-of-file block of 11 `markBroken(...)` calls covering every
-  authority above.
-- `reviewComplaint.js` renders broken buttons with an *(out of date)*
-  suffix and an opacity-0.6 background tint. Clicking shows an alert
-  with `brokenReason` then dispatches `composeComplaint` so the stub
-  opens the help URL.
-- ASA's existing wiring is unchanged.
-
-## Re-running the audit
-
-The harness is reproducible:
-
-1. Reload the extension in `chrome://extensions/` so the latest
-   `automation.html` / `automation.js` / `inject.js` are loaded.
-2. Open any http(s) page (the harness uses the content-script bridge).
-3. Paste the `window.fb` helper + `auditAuthority` setup from this
-   commit's `automation.js`. Call `auditAuthority("ASA")` etc.
-4. `auditAuthority` swaps your real `chrome.storage.local` for a
-   synthetic identity (Test Person, 1 Test Street, etc.) and writes it
-   back at end. The page-side automation console (`chrome-extension://<id>/automation.html`)
-   has a manual *Restore real settings* button as a safety net.
-
-## Out of scope from this audit
-
-- **Researching where each regulator's complaint flow actually lives
-  now.** The `helpUrl` values above are best-guess landing pages; some
-  may themselves be out of date. A follow-up could click through each
-  and find the live form, then rebuild that authority's
-  `ComposeComplaint`/`AutoFillForm` against the new endpoint.
-- **Bypassing CAPTCHA / Cloudflare Turnstile** on regulator pages. The
-  audit only fills and snapshots; CAPTCHAs are user-side.
-- **Adding new regulators** (e.g. a TGA Australia handler to replace
-  the dissolved CRP).
-- **Republishing to the Chrome Web Store.** That's a separate manual
-  step once the wiring is in a state you're happy with.
+- Solving CAPTCHAs / Cloudflare Turnstile / login walls (any submission
+  requiring them is user-side).
+- Mapping multi-step .NET WebForms (CanadianASC) — each step's
+  conditional rendering needs sequential clicks + per-step snapshot.
+- Mapping gov.uk's report-a-problem framework where field names vary
+  per session.
+- Researching what each of VZHH/DKMA expects from a non-Gmail
+  alternative; their landing pages don't expose a form.

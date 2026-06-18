@@ -516,57 +516,43 @@ ASAIAuth.Key = "ASAI";
 ASAIAuth.Country = "Ireland";
 ASAIAuth.Name = "Advertising Standards Authority of Ireland";
 
+// Re-wired 2026-06-18: ASAI rebranded as "Advertising Standards" on
+// adstandards.ie. The current form is a Gravity Forms wizard at
+// /make-a-complaint/make-a-complaint/. Fields use Gravity's input_NN
+// naming but every input has a recoverable label, so the mapping is
+// semantic. Verified live: 14 of 14 candidate fields fill on first
+// load including the consent checkbox.
 ASAIAuth.ComposeComplaint = function () {
-    navigateActiveTab("http://www.asai.ie/complain.asp");
+    navigateActiveTab("https://adstandards.ie/make-a-complaint/make-a-complaint/");
 };
 
 ASAIAuth.AutoFillForm = function () {
-    var url = "http://www.asai.ie/complain.asp";
-    if (url == window.location.href) {
-        askIfComplaintReady("ASAI", function (response) {
-            if (response.body) {
-                FishBarrel.FillFormElement(0, "complaint", response.body);
-                FishBarrel.FillFormElement(0, "advertiser", response.organisationName);
-            }
-            if (response.settingsAttached) {
-                var settings = response.settings;
-                var titleBox = document.getElementById("title");
-                if (titleBox) {
-                    for (var i = 0; i < titleBox.options.length; i++) {
-                        if (titleBox.options[i].text == settings.title) titleBox.selectedIndex = i;
-                    }
-                }
-                FishBarrel.FillElement("title", settings.title);
-                FishBarrel.FillElement("fname", settings.firstName);
-                FishBarrel.FillElement("sname", settings.surname);
-                FishBarrel.FillFormElement(0, "faddress",
-                    (settings.address || "") + "\r\n" + (settings.city || "") + "\r\n" +
-                    (settings.county || "") + "\r\n" + (settings.postcode || ""));
-                FishBarrel.FillElement("phone", settings.phonenumber);
-                FishBarrel.FillElement("email", settings.email);
-                FishBarrel.FillElement("commercialInterest", false);
-                FishBarrel.FillElement("companyorg", "N/A");
-                FishBarrel.FillElement("product", "Alternative Health");
-                FishBarrel.FillElement("whereseen", response.WebsiteUrl);
-                var d = new Date();
-                FishBarrel.FillElement("whenseen", d.getDate() + "/" + (d.getMonth() + 1) + "/" + d.getFullYear());
-                FishBarrel.FillElement("media1", "Internet");
+    if (window.location.href.indexOf("https://adstandards.ie/make-a-complaint/make-a-complaint") !== 0) return;
+    askIfComplaintReady("ASAI", function (response) {
+        if (!response.settingsAttached) return;
+        var s = response.settings;
+        // Consent checkbox — has to be ticked for the rest of the form to
+        // activate.
+        FishBarrel.FillByName("input_68.1", true);
 
-                var c = document.getElementById("complaint");
-                if (c) c.style.height = "400px";
+        // Personal details (Gravity Forms "Advanced Name" + "Address" fields)
+        FishBarrel.FillFirstMatch(["input_63.3", "first_name"], s.firstName);
+        FishBarrel.FillFirstMatch(["input_63.6", "last_name", "surname"], s.surname);
+        FishBarrel.FillFirstMatch(["input_65.1", "address_1", "street_address"], s.address);
+        FishBarrel.FillFirstMatch(["input_65.3", "city", "town"], s.city);
+        FishBarrel.FillFirstMatch(["input_65.4", "county", "region"], s.county);
+        FishBarrel.FillFirstMatch(["input_65.5", "postcode", "post_code", "eircode", "zip"], s.postcode);
+        FishBarrel.FillFirstMatch(["input_65.6"], "United Kingdom"); // country (select)
+        FishBarrel.FillFirstMatch(["input_99", "telephone", "phone", "phone_number"], s.phonenumber);
+        FishBarrel.FillFirstMatch(["input_100", "email", "email_address"], s.email);
 
-                alert("Please review the form, then submit both this page and the subsequent confirmation page.");
-            }
-        });
-    }
-
-    if ("http://www.asai.ie/complain2.asp" == window.location.href) {
-        askIfComplaintReady("ASAI", function () {
-            if (document.forms[1] && document.forms[1].elements["Submit"]) {
-                document.forms[1].elements["Submit"].addEventListener('click', function () { FishBarrel.ComplaintSent("ASAI"); }, false);
-            }
-        });
-    }
+        // Advertisement details
+        FishBarrel.FillFirstMatch(["input_14", "advertiser", "advertiser_name"], response.organisationName);
+        FishBarrel.FillFirstMatch(["input_15", "product", "product_service"], "Alternative Health");
+        FishBarrel.FillFirstMatch(["input_33", "advert_url", "url"], response.WebsiteUrl);
+        FishBarrel.FillFirstMatch(["input_31", "description_of_ad"], "See the body of the complaint below.");
+        FishBarrel.FillFirstMatch(["input_58", "complaint", "complaint_details", "description_of_complaint"], response.body);
+    });
 };
 Authorities[ASAIAuth.Key] = ASAIAuth;
 
@@ -888,32 +874,28 @@ markBroken(MHRAAuth,
     "https://www.gov.uk/report-problem-medicine-medical-device");
 
 markBroken(ACCCAuth,
-    "ACCC's original complaint URL redirects to a search/contact page. Use the ACCC consumer complaints flow.",
-    "https://www.accc.gov.au/consumers/problem-with-a-product-or-service");
+    "ACCC's old complaint endpoint is gone. The replacement is the consumer 'problem with a product or service you bought' flow.",
+    "https://www.accc.gov.au/consumers/problem-with-a-product-or-service-you-bought");
 
 markBroken(CRPAuth,
-    "The Complaints Resolution Panel was dissolved; advertising complaints in Australia now go through the TGA's Advertising Hub.",
-    "https://www.tga.gov.au/safety/complaints/lodging-advertising-complaint");
+    "The Complaints Resolution Panel was dissolved; advertising complaints in Australia now go through the TGA's Report a Breach flow.",
+    "https://www.tga.gov.au/safety/report-problem/report-breach");
 
 markBroken(FDAAuth,
     "FDA's 'buy online' complaint form is no longer hosted; the catch-all 'Report a Problem' page is the current route.",
     "https://www.fda.gov/safety/report-problem-fda");
 
 markBroken(CanadianCompBureau,
-    "The Competition Bureau's old complaint URL no longer presents a form. Use the Bureau's current report-a-problem page.",
-    "https://competitionbureau.gc.ca/eic/site/cb-bc.nsf/eng/04604.html");
+    "The Competition Bureau moved domains (competition-bureau.canada.ca) and rebuilt the deceptive-marketing report flow. Old wiring no longer matches.",
+    "https://competition-bureau.canada.ca/en/how-we-foster-competition/deceptive-marketing-practices/report-deceptive-marketing-practice");
 
 markBroken(CanadianASC,
-    "Ad Standards Canada moved from adstandards.com to adstandards.ca and the eComplaints form was rebuilt; the old wiring no longer matches.",
-    "https://adstandards.ca/complaints/submit-a-complaint/");
-
-markBroken(ASAIAuth,
-    "ASAI rebranded as Advertising Standards on adstandards.ie and the old complain.asp form is gone.",
-    "https://adstandards.ie/make-a-complaint/");
+    "Ad Standards Canada moved its public complaint form to complaints.adstandards.ca. It's a multi-step .NET WebForm; not autonomously wireable yet.",
+    "https://complaints.adstandards.ca/pub/complaints?lang=en");
 
 markBroken(SRCAuth,
-    "Stichting Reclame Code's old default.asp form page returns no fields. Use the current complaints flow on reclamecode.nl.",
-    "https://www.reclamecode.nl/consumenten/klacht-indienen/");
+    "Stichting Reclame Code's new klachtenformulier page describes how to complain but doesn't embed a form on-page; follow the instructions there.",
+    "https://www.reclamecode.nl/klacht-indienen/klachtenformulier/");
 
 markBroken(VZHHAuth,
     "Used the legacy Gmail basic-HTML compose URL, which Google discontinued in 2024. Contact Verbraucherzentrale Hamburg directly.",
