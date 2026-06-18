@@ -757,6 +757,184 @@ async function handleMessage(request, sender) {
             });
         }
 
+        case "navigateTab": {
+            // Direct URL navigation for any tab. Used by the audit / re-wire
+            // harness to open candidate regulator URLs without going through
+            // composeComplaint.
+            if (typeof request.tabId !== "number" || !request.url) return { error: "bad-payload" };
+            return await new Promise(function (resolve) {
+                chrome.tabs.update(request.tabId, { url: request.url }, function (tab) {
+                    void chrome.runtime.lastError;
+                    resolve({ ok: true, requested: request.url });
+                });
+            });
+        }
+
+        case "fillFields": {
+            // Generic field filler. request.mappings is an array of
+            //   { candidates: ["first_name","fname",...], value: "Test" }
+            // For each mapping, finds the first matching field by name (and
+            // failing that, by id) in any frame, sets its value, fires
+            // input + change events. Returns per-mapping which candidate
+            // matched (or null).
+            if (typeof request.tabId !== "number" || !Array.isArray(request.mappings)) return { error: "bad-payload" };
+            var results;
+            try {
+                results = await chrome.scripting.executeScript({
+                    target: { tabId: request.tabId, allFrames: true },
+                    func: function (mappings) {
+                        function setVal(el, value) {
+                            var t = (el.type || el.tagName || "").toLowerCase();
+                            try {
+                                if (t === "checkbox" || t === "radio") {
+                                    el.checked = !!value;
+                                } else if (t === "select-one" || t === "select-multiple" || el.tagName === "SELECT") {
+                                    var matched = false;
+                                    for (var i = 0; i < el.options.length; i++) {
+                                        if (el.options[i].value == value || el.options[i].text == value) {
+                                            el.selectedIndex = i; matched = true; break;
+                                        }
+                                    }
+                                    if (!matched) return false;
+                                } else {
+                                    el.value = value;
+                                }
+                                el.dispatchEvent(new Event('input', { bubbles: true }));
+                                el.dispatchEvent(new Event('change', { bubbles: true }));
+                                return true;
+                            } catch (e) { return false; }
+                        }
+                        var out = [];
+                        for (var i = 0; i < mappings.length; i++) {
+                            var m = mappings[i];
+                            var matched = null;
+                            var attempted = [];
+                            for (var c = 0; c < m.candidates.length; c++) {
+                                var name = m.candidates[c];
+                                attempted.push(name);
+                                var els = document.getElementsByName(name);
+                                if (els.length === 0 && document.getElementById(name)) els = [document.getElementById(name)];
+                                if (els.length === 0) continue;
+                                var anySet = false;
+                                for (var k = 0; k < els.length; k++) {
+                                    if (setVal(els[k], m.value)) anySet = true;
+                                }
+                                if (anySet) { matched = name; break; }
+                            }
+                            out.push({ logicalIndex: i, matched: matched, attempted: attempted });
+                        }
+                        return out;
+                    },
+                    args: [request.mappings]
+                });
+            } catch (e) {
+                return { error: String(e && e.message || e) };
+            }
+            // Aggregate across frames: a mapping is matched if ANY frame
+            // matched it.
+            var perMapping = request.mappings.map(function (_, i) { return { logicalIndex: i, matched: null, attempted: null }; });
+            for (var i = 0; i < results.length; i++) {
+                var arr = (results[i] && results[i].result) || [];
+                for (var j = 0; j < arr.length; j++) {
+                    var rec = arr[j];
+                    if (!perMapping[j].attempted) perMapping[j].attempted = rec.attempted;
+                    if (rec.matched && !perMapping[j].matched) perMapping[j].matched = rec.matched;
+                }
+            }
+            return { results: perMapping };
+        }
+
+        case "readFieldValues": {
+            // Read current values for a list of field identifiers (name OR id).
+            // Returns { identifier: { value, checked, source: "name"|"id"|null, frameId } }.
+            if (typeof request.tabId !== "number" || !Array.isArray(request.identifiers)) return { error: "bad-payload" };
+            try {
+                var results = await chrome.scripting.executeScript({
+                    target: { tabId: request.tabId, allFrames: true },
+                    func: function (ids) {
+                        var out = {};
+                        for (var i = 0; i < ids.length; i++) {
+                            var idf = ids[i];
+                            var els = document.getElementsByName(idf);
+                            var src = els.length ? "name" : null;
+                            if (els.length === 0 && document.getElementById(idf)) {
+                                els = [document.getElementById(idf)];
+                                src = "id";
+                            }
+                            if (els.length === 0) { out[idf] = null; continue; }
+                            var el = els[0];
+                            var t = (el.type || "").toLowerCase();
+                            out[idf] = {
+                                source: src,
+                                tag: el.tagName.toLowerCase(),
+                                type: el.type || null,
+                                value: el.value != null ? String(el.value) : null,
+                                checked: (t === "checkbox" || t === "radio") ? !!el.checked : null
+                            };
+                        }
+                        return out;
+                    },
+                    args: [request.identifiers]
+                });
+                // Merge per-frame results — first non-null wins.
+                var merged = {};
+                for (var i = 0; i < results.length; i++) {
+                    var r = results[i] && results[i].result;
+                    if (!r) continue;
+                    for (var k in r) {
+                        if (r[k] && !merged[k]) merged[k] = Object.assign({ frameId: results[i].frameId }, r[k]);
+                    }
+                }
+                // Ensure every identifier has an entry.
+                for (var j = 0; j < request.identifiers.length; j++) {
+                    var id = request.identifiers[j];
+                    if (!(id in merged)) merged[id] = null;
+                }
+                return { values: merged };
+            } catch (e) {
+                return { error: String(e && e.message || e) };
+            }
+        }
+
+        case "clickElement": {
+            // Click an element identified by id, name, or CSS selector. Returns
+            // which selector matched and whether the click happened.
+            if (typeof request.tabId !== "number") return { error: "missing-tabId" };
+            var sel = request.selector;
+            var byId = request.id;
+            var byName = request.name;
+            if (!sel && !byId && !byName) return { error: "need-selector-or-id-or-name" };
+            try {
+                var results = await chrome.scripting.executeScript({
+                    target: { tabId: request.tabId, allFrames: true },
+                    func: function (sel, byId, byName) {
+                        var el = null, how = null;
+                        if (byId) { el = document.getElementById(byId); how = el ? "id" : null; }
+                        if (!el && byName) {
+                            var els = document.getElementsByName(byName);
+                            if (els.length) { el = els[0]; how = "name"; }
+                        }
+                        if (!el && sel) {
+                            try { el = document.querySelector(sel); how = el ? "selector" : null; } catch (e) {}
+                        }
+                        if (!el) return { clicked: false };
+                        try { el.click(); }
+                        catch (e) { return { clicked: false, error: String(e && e.message || e) }; }
+                        return { clicked: true, via: how, text: (el.innerText || el.value || "").trim().substring(0, 80) };
+                    },
+                    args: [sel || null, byId || null, byName || null]
+                });
+                // First positive result wins.
+                for (var i = 0; i < results.length; i++) {
+                    var r = results[i] && results[i].result;
+                    if (r && r.clicked) return Object.assign({ frameId: results[i].frameId }, r);
+                }
+                return { clicked: false };
+            } catch (e) {
+                return { error: String(e && e.message || e) };
+            }
+        }
+
         case "waitTabComplete": {
             // Resolves once the named tab finishes loading (or after a
             // timeout). Used by the audit harness to know when a regulator's
