@@ -744,6 +744,15 @@ ASAAuth.TryFill = function (response) {
     // first step after the intro).
     FishBarrel.SelectRadioByValue("about_the_complaint", ASAAuth.PUBLIC_COMPLAINT_GUID);
 
+    // Type of ad: FishBarrel only captures online quackery, so the
+    // top-level "where did you see the ad" cascade always starts at
+    // "Online" (GUID extracted from ASA's make_a_complaint JS bundle).
+    // Without this the page blocks at the first step waiting for a
+    // selection. Level 2 (search engine / social / website / streaming
+    // / etc) and level 3 stay user-pick because that varies per
+    // complaint.
+    FishBarrel.FillByName("complaint_advertisement_type_level_1", "DF57F934-69FB-4796-A4BC773A5361AEAB");
+
     // Personal-detail field names confirmed against the live form (snapshot
     // 2026-06-17). The fallback candidates stay for other authorities.
     FishBarrel.FillFirstMatch(["title", "salutation"], settings.title);
