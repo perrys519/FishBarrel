@@ -705,6 +705,93 @@ async function handleMessage(request, sender) {
             return { ok: true };
         }
 
+        case "listAuthorities": {
+            // For the audit harness. Returns enough metadata per authority
+            // to walk the list and call composeComplaint for each.
+            var out = [];
+            for (var k in Authorities) {
+                var a = Authorities[k];
+                out.push({
+                    key: k,
+                    Country: a.Country || null,
+                    Name: a.Name || null,
+                    broken: !!a.broken,
+                    brokenReason: a.brokenReason || null,
+                    helpUrl: a.helpUrl || null
+                });
+            }
+            return { authorities: out };
+        }
+
+        case "openTab": {
+            // Create a victim tab so composeComplaint has somewhere safe to
+            // navigate without clobbering the bridge tab. Returns the tab id
+            // so the harness can target snapshotForm/closeTab at it.
+            return await new Promise(function (resolve) {
+                chrome.tabs.create({
+                    url: request.url || "about:blank",
+                    active: request.active !== false
+                }, function (tab) {
+                    resolve({ tabId: tab.id, url: tab.url });
+                });
+            });
+        }
+
+        case "closeTab": {
+            if (typeof request.tabId !== "number") return { error: "missing-tabId" };
+            return await new Promise(function (resolve) {
+                chrome.tabs.remove(request.tabId, function () {
+                    void chrome.runtime.lastError;
+                    resolve({ ok: true });
+                });
+            });
+        }
+
+        case "activateTab": {
+            if (typeof request.tabId !== "number") return { error: "missing-tabId" };
+            return await new Promise(function (resolve) {
+                chrome.tabs.update(request.tabId, { active: true }, function (tab) {
+                    void chrome.runtime.lastError;
+                    resolve({ ok: true, url: tab && tab.url });
+                });
+            });
+        }
+
+        case "waitTabComplete": {
+            // Resolves once the named tab finishes loading (or after a
+            // timeout). Used by the audit harness to know when a regulator's
+            // form is ready to snapshot.
+            if (typeof request.tabId !== "number") return { error: "missing-tabId" };
+            var tabId = request.tabId;
+            var timeoutMs = typeof request.timeoutMs === "number" ? request.timeoutMs : 20000;
+            return await new Promise(function (resolve) {
+                var done = false;
+                function finish(reason) {
+                    if (done) return;
+                    done = true;
+                    chrome.tabs.onUpdated.removeListener(onUpdated);
+                    chrome.tabs.onRemoved.removeListener(onRemoved);
+                    chrome.tabs.get(tabId, function (tab) {
+                        void chrome.runtime.lastError;
+                        resolve({ reason: reason, url: tab && tab.url, status: tab && tab.status });
+                    });
+                }
+                function onUpdated(updatedTabId, changeInfo) {
+                    if (updatedTabId === tabId && changeInfo.status === "complete") finish("complete");
+                }
+                function onRemoved(removedTabId) {
+                    if (removedTabId === tabId) finish("removed");
+                }
+                chrome.tabs.onUpdated.addListener(onUpdated);
+                chrome.tabs.onRemoved.addListener(onRemoved);
+                // Maybe already complete.
+                chrome.tabs.get(tabId, function (tab) {
+                    if (tab && tab.status === "complete") finish("already-complete");
+                });
+                setTimeout(function () { finish("timeout"); }, timeoutMs);
+            });
+        }
+
         case "snapshotForm": {
             // Proxy the form-snapshot request to a specific tab's content
             // script. Returns the FormRecorder JSON or { error }.
