@@ -157,32 +157,38 @@ NZASAAuth.Key = "NZASA";
 NZASAAuth.Country = "New Zealand";
 NZASAAuth.Name = "New Zealand Advertising Standards Authority";
 
+// Re-wired 2026-06-18: NZASA moved their complaint form to
+// /complaints/make-a-complaint/ and rebuilt it on Forminator (a WordPress
+// plugin). Field names are generic (text-1, name-1-first-name, etc.) but
+// FormRecorder confirmed semantic labels on every input, so we can map
+// them. The form is multi-step but Forminator keeps every step's fields
+// in the DOM from page load, so a single fill-everything pass survives
+// the user's wizard navigation. Verified live against asa.co.nz: 11 of
+// 11 candidate fields filled on first load.
 NZASAAuth.ComposeComplaint = function () {
-    navigateActiveTab("http://www.asa.co.nz/complaint_form.php");
+    navigateActiveTab("https://www.asa.co.nz/complaints/make-a-complaint/");
 };
 
 NZASAAuth.AutoFillForm = function () {
-    var url = "http://www.asa.co.nz/complaint_form.php";
-    if (url == window.location.href) {
-        askIfComplaintReady("NZASA", function (response) {
-            if (document.forms[0] && document.forms[0].elements["Submit"]) {
-                document.forms[0].elements["Submit"].addEventListener('click', function () { FishBarrel.ComplaintSent("NZASA"); }, false);
-            }
-            var settings = response.settings;
-            FishBarrel.FillElement("fromfname", settings.firstName);
-            FishBarrel.FillElement("fromlname", settings.surname);
-            FishBarrel.FillElement("fromaddress1", settings.address);
-            FishBarrel.FillElement("fromaddress2", settings.city);
-            FishBarrel.FillElement("fromaddress3", settings.postcode);
-            FishBarrel.FillElement("fromphone", settings.phonenumber);
-            FishBarrel.FillElement("fromemail", settings.email);
-            FishBarrel.FillElement("fromtype", "Website");
-            FishBarrel.FillElement("fromwho", response.organisationName);
-            FishBarrel.FillElement("fromproduct", "Alternative Health");
-            FishBarrel.FillElement("fromad_url", response.WebsiteUrl);
-            FishBarrel.FillElement("fromcomplaint", response.body);
-        });
+    if (window.location.href.indexOf("https://www.asa.co.nz/complaints/make-a-complaint") !== 0
+        && window.location.href.indexOf("https://asa.co.nz/complaints/make-a-complaint") !== 0) {
+        return;
     }
+    askIfComplaintReady("NZASA", function (response) {
+        if (!response.settingsAttached) return;
+        var s = response.settings;
+        FishBarrel.FillFirstMatch(["name-1-first-name", "first_name"], s.firstName);
+        FishBarrel.FillFirstMatch(["name-1-last-name", "last_name", "surname"], s.surname);
+        FishBarrel.FillFirstMatch(["address-1-street_address", "address_1", "street_address"], s.address);
+        FishBarrel.FillFirstMatch(["address-1-address_line", "address_2"], s.county);
+        FishBarrel.FillFirstMatch(["address-1-city", "town", "city"], s.city);
+        FishBarrel.FillFirstMatch(["address-1-zip", "postcode", "post_code", "zip"], s.postcode);
+        FishBarrel.FillFirstMatch(["phone-1", "telephone", "phone", "phone_number"], s.phonenumber);
+        FishBarrel.FillFirstMatch(["email-1", "email", "email_address"], s.email);
+        FishBarrel.FillFirstMatch(["text-1", "advertiser", "advertiser_name"], response.organisationName);
+        FishBarrel.FillFirstMatch(["url-1", "advert_url", "advertisement_url"], response.WebsiteUrl);
+        FishBarrel.FillFirstMatch(["textarea-1", "complaint", "complaint_details", "description_of_complaint"], response.body);
+    });
 };
 Authorities[NZASAAuth.Key] = NZASAAuth;
 
@@ -900,10 +906,6 @@ markBroken(CanadianCompBureau,
 markBroken(CanadianASC,
     "Ad Standards Canada moved from adstandards.com to adstandards.ca and the eComplaints form was rebuilt; the old wiring no longer matches.",
     "https://adstandards.ca/complaints/submit-a-complaint/");
-
-markBroken(NZASAAuth,
-    "The NZ ASA's complaint_form.php URL no longer presents a form; use the rebuilt complaints flow on the main site.",
-    "https://www.asa.co.nz/complaints/make-a-complaint/");
 
 markBroken(ASAIAuth,
     "ASAI rebranded as Advertising Standards on adstandards.ie and the old complain.asp form is gone.",

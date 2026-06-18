@@ -896,6 +896,49 @@ async function handleMessage(request, sender) {
             }
         }
 
+        case "harvestLinks": {
+            // Return every <a href> on the tab (across all frames), with the
+            // anchor's visible text. Used by the re-wire harness to find
+            // "Make a complaint" / "Submit" / etc. links on landing pages.
+            if (typeof request.tabId !== "number") return { error: "missing-tabId" };
+            try {
+                var results = await chrome.scripting.executeScript({
+                    target: { tabId: request.tabId, allFrames: true },
+                    func: function () {
+                        var out = [];
+                        var seen = {};
+                        var anchors = document.querySelectorAll('a[href]');
+                        for (var i = 0; i < anchors.length; i++) {
+                            var a = anchors[i];
+                            var href = a.href || "";
+                            if (!href || !/^https?:/i.test(href)) continue;
+                            if (seen[href]) continue;
+                            seen[href] = true;
+                            out.push({
+                                href: href,
+                                text: ((a.innerText || a.textContent || "") + "").trim().replace(/\s+/g, " ").substring(0, 120)
+                            });
+                        }
+                        return out;
+                    }
+                });
+                // Merge per-frame
+                var merged = [];
+                var seenH = {};
+                for (var i = 0; i < results.length; i++) {
+                    var arr = (results[i] && results[i].result) || [];
+                    for (var j = 0; j < arr.length; j++) {
+                        if (seenH[arr[j].href]) continue;
+                        seenH[arr[j].href] = true;
+                        merged.push(arr[j]);
+                    }
+                }
+                return { links: merged };
+            } catch (e) {
+                return { error: String(e && e.message || e) };
+            }
+        }
+
         case "clickElement": {
             // Click an element identified by id, name, or CSS selector. Returns
             // which selector matched and whether the click happened.
